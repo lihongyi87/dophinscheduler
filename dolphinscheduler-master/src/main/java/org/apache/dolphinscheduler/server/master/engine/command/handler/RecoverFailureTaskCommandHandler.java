@@ -50,8 +50,46 @@ import org.springframework.stereotype.Component;
 import com.google.common.collect.Lists;
 
 /**
- * This handler used to handle {@link CommandType#START_FAILURE_TASK_PROCESS}.
- * <p> Will start the failure/pause/killed and other task instance which is behind success tasks instance but not been triggered.
+ * 失败任务恢复命令处理器
+ * 
+ * 这是专门处理START_FAILURE_TASK_PROCESS命令的处理器，负责恢复执行失败、暂停、
+ * 被杀死的任务，以及那些因前置任务失败而未被触发的后续任务。
+ * 类比：就像一个"故障修复专家"，专门处理生产线故障后的恢复工作。
+ * 
+ * 核心职责：
+ * 1. 故障诊断：分析工作流中哪些任务需要恢复执行
+ * 2. 实例恢复：重置工作流实例状态，准备重新执行
+ * 3. 任务筛选：识别需要重新执行的失败任务和被阻塞的后续任务
+ * 4. 图重构：基于任务状态重新构建执行图
+ * 5. 依赖恢复：恢复任务间的依赖关系和执行顺序
+ * 
+ * 恢复策略：
+ * - 失败任务：重置为待执行状态，重新运行
+ * - 暂停任务：从暂停状态恢复到运行状态
+ * - 被杀任务：重置状态并重新调度执行
+ * - 阻塞任务：解除阻塞，允许正常执行
+ * - 依赖任务：重新评估依赖关系，恢复执行链
+ * 
+ * 适用场景：
+ * - 故障恢复：系统故障导致的任务执行失败
+ * - 手动恢复：用户手动终止后需要恢复执行
+ * - 资源恢复：资源不足导致失败后的重新执行
+ * - 依赖修复：修复依赖问题后的任务恢复
+ * - 部分重跑：只恢复特定失败任务及其后续任务
+ * 
+ * 处理特点：
+ * - 智能恢复：只处理需要恢复的任务，不影响已成功的任务
+ * - 依赖感知：考虑任务间的依赖关系进行恢复
+ * - 状态保持：保留工作流的原有配置和参数
+ * - 增量执行：从失败点继续，而不是全部重新执行
+ * 
+ * 类比理解：
+ * 就像工厂生产线故障修复：
+ * - 诊断哪个工序出了问题（识别失败任务）
+ * - 修复故障工序（恢复失败任务）
+ * - 重启后续工序（恢复被阻塞的任务）
+ * - 保持其他工序不变（不影响成功任务）
+ * - 确保产品质量（维护数据一致性）
  */
 @Component
 public class RecoverFailureTaskCommandHandler extends AbstractCommandHandler {
