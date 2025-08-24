@@ -1,0 +1,195 @@
+基于对项目源代码的系统性分析，以下是DolphinScheduler的架构、机制和底层
+  原理总结：
+
+  1. 系统整体架构设计
+
+  分层分布式架构：
+  - API层: REST API服务，提供Web UI和外部接口
+  - Master层: 工作流调度核心，负责DAG解析、任务分发、状态管理
+  - Worker层: 任务执行节点，执行具体任务并上报状态
+  - Alert层: 告警服务，处理各种告警通知
+  - Registry层: 服务注册发现，支持Zookeeper/Raft等实现
+
+  2. 核心机制和原理
+
+  工作流引擎机制：
+  - WorkflowEngine: 工作流执行引擎核心
+  - CommandEngine: 命令处理引擎，处理工作流启动命令
+  - 基于DAG(有向无环图)的工作流定义和执行
+  - 支持多种调度策略：串行等待、并行执行、容错重试
+
+  任务执行引擎：
+  - LogicTaskEngineDelegator: Master端逻辑任务引擎代理
+  - PhysicalTaskEngineDelegator: Worker端物理任务引擎代理
+  - 支持插件化任务类型扩展
+  - 任务生命周期管理和状态跟踪
+
+  状态机驱动：
+  - 工作流状态机：SUBMITTED → RUNNING → SUCCESS/FAILED/STOPPED
+  - 任务状态机：多状态转换和事件驱动
+  - RaftRegistryStateMachine: Raft共识状态机实现
+
+  3. 底层技术实现
+
+  数据存储层：
+  - 基于MyBatis-Plus的ORM数据访问
+  - 支持MySQL、PostgreSQL、H2等数据库
+  - 分表分库支持和数据库连接池管理
+
+  服务注册发现：
+  - 抽象化Registry接口设计
+  - 支持Zookeeper传统模式和Raft嵌入式模式
+  - 服务健康检查和自动故障转移
+
+  分布式协调：
+  - 基于SOFAJRaft的Raft共识算法实现
+  - 分布式锁机制和临时节点管理
+  - 快照存储和日志复制优化
+
+  任务插件系统：
+  - TaskPluginManager: 插件加载和管理
+  - SPI(Service Provider Interface)机制
+  - 支持Shell、SQL、Spark、Flink、Python等多种任务类型
+
+  事件驱动架构：
+  - SystemEventBus: 系统事件总线
+  - WorkflowEventBusCoordinator: 工作流事件协调器
+  - 异步事件处理和生命周期回调
+
+  监控与指标：
+  - 基于Micrometer的指标收集
+  - Prometheus格式指标导出
+  - 系统资源监控和性能指标统计
+
+  4. 设计模式和最佳实践
+
+  设计模式应用：
+  - 工厂模式: TaskEngineFactory、LogicTaskEngineFactory
+  - 代理模式: 各种Delegator类用于组件生命周期管理
+  - 状态模式: 工作流和任务的状态机实现
+  - 策略模式: 负载均衡算法、调度策略选择
+  - 观察者模式: 事件监听和状态变更通知
+  - 适配器模式: MasterRaftRegistry适配器整合Raft到Master
+
+  最佳实践：
+  - 资源自动管理: 实现AutoCloseable接口确保资源释放
+  - 线程池优化: 分层线程池设计，避免线程阻塞
+  - 批量处理: 支持批量命令执行提升性能
+  - 监控可观测: 全方位指标监控和健康检查
+  - 优雅停机: shutdown hook和生命周期管理
+  - 配置热更新: 支持运行时配置调整
+  - 故障恢复: Master failover和任务重试机制
+
+  技术架构特点：
+  - 微服务架构但可单机部署
+  - 无状态设计支持水平扩展
+  - 插件化扩展能力强
+  - 支持多种部署模式(集群/单机)
+  - 完善的监控和运维能力
+
+
+  注释覆盖     
+  的主要文件和内容：
+
+  已添加注释的核心文件：
+
+  1. Master核心组件
+
+  - MasterServer.java:
+  Master服务器主类，详细注释了10步启动流程和优雅关闭流程
+  - WorkflowEngine.java: 工作流引擎，注释了4个子系统的启动顺序和关闭流程     
+  - LogicTaskEngineDelegator.java:
+  Master端逻辑任务引擎，详细解释了条件判断、子工作流等任务的处理
+
+  2. Worker核心组件
+
+  - WorkerServer.java: Worker服务器主类，注释了6步启动流程和监控指标注册     
+  - PhysicalTaskEngineDelegator.java:
+  Worker端物理任务引擎，解释了具体任务执行和故障转移机制
+
+  注释涵盖的核心概念：
+
+  启动流程注释
+
+  - Master启动: RPC服务器 → 插件加载 → 注册中心 → 协调器 → 集群管理 →        
+  工作流引擎 → 调度器 → 事件总线 → 监控指标
+  - Worker启动: RPC服务器 → 插件加载 → 数据源初始化 → 注册中心 →
+  任务引擎 → 监控指标
+
+  核心机制注释
+
+  - 任务分发: Master逻辑任务 vs Worker物理任务的区别和处理方式
+  - 生命周期管理: 启动顺序、关闭顺序、资源释放的重要性
+  - 故障转移: Master故障时Worker如何重新分配工作流实例主机
+  - 监控指标: CPU使用率、内存使用率、可用内存的监控意义
+
+  架构设计注释
+
+  - 委托者模式: TaskEngineDelegator的设计意图和职责分离
+  - 事件驱动: 生命周期事件上报和确认机制
+  - 优雅关闭: try-with-resources确保资源正确释放的重要性
+
+
+  工作流状态机类：
+
+  - WorkflowSubmittedStateAction - 工作流"已提交"状态操作类
+  - WorkflowRunningStateAction - 工作流"正在运行"状态操作类
+  - WorkflowFailedStateAction - 工作流"已失败"状态操作类
+  - WorkflowPausedStateAction - 工作流"已暂停"状态操作类
+
+  工作流生命周期事件处理类：
+
+  - WorkflowStartLifecycleEventHandler - 工作流启动生命周期事件处理器        
+  - WorkflowSucceedLifecycleEventHandler - 工作流成功生命周期事件处理器      
+  - WorkflowFailedLifecycleEventHandler - 工作流失败生命周期事件处理器       
+  - WorkflowPauseLifecycleEventHandler - 工作流暂停生命周期事件处理器        
+  - WorkflowStopLifecycleEventHandler - 工作流停止生命周期事件处理器
+
+  任务生命周期事件处理类：
+
+  - TaskDispatchLifecycleEventHandler - 任务分发生命周期事件处理器
+  - TaskSuccessLifecycleEventHandler - 任务成功生命周期事件处理器
+  - TaskFailedLifecycleEventHandler - 任务失败生命周期事件处理器
+  - TaskKilledLifecycleEventHandler - 任务被杀死生命周期事件处理器
+  - TaskRunningLifecycleEventHandler - 任务运行中生命周期事件处理器
+
+
+   核心调度器组件：
+
+  1. MasterCoordinator - Master协调器
+    - 集群中的单例组件，负责Master节点的高可用性选主
+    - 管理任务组协调器，处理Active/StandBy状态切换
+    - 确保关键资源的单点控制和协调
+  2. RunWorkflowCommandHandler - 运行工作流命令处理器
+    - 工作流启动的核心处理器，处理START_PROCESS类型命令
+    - 构建工作流执行图（DAG拓扑结构）
+    - 合并命令参数和工作流全局参数
+  3. ScheduleWorkflowCommandHandler - 定时调度工作流命令处理器
+    - 专门处理定时调度触发的工作流启动
+    - 继承RunWorkflowCommandHandler，处理SCHEDULER类型命令
+
+  工作流触发器：
+
+  4. WorkflowScheduleTrigger - 工作流调度触发器
+    - 处理定时调度触发的工作流启动
+    - 设置调度特有的属性（调度时间、时区等）
+    - 生成SCHEDULER类型的执行命令
+  5. WorkflowManualTrigger - 工作流手动触发器
+    - 处理用户手动触发的工作流启动
+    - 支持用户自定义参数和启动节点
+    - 生成START_PROCESS类型的执行命令
+
+  事件处理和任务管理：
+
+  6. WorkflowEventBus - 工作流事件总线
+    - 工作流实例的专用事件总线
+    - 管理工作流和任务级别的所有生命周期事件
+    - 提供事件统计和监控功能
+  7. WorkerGroupDispatcherCoordinator - 工作组分发器协调者
+    - 管理和协调不同工作组的任务分发
+    - 为每个工作组维护独立的任务分发器
+    - 支持延迟任务分发机制
+  8. TaskExecutorClient - 任务执行器客户端
+    - Master与任务执行器通信的客户端
+    - 根据任务类型（逻辑/物理）选择合适的代理
+    - 处理任务分发、控制和生命周期事件确认

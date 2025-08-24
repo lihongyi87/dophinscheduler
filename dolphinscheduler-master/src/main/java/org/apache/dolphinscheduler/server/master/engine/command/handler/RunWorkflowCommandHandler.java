@@ -51,8 +51,27 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
 /**
- * Used to handle the {@link CommandType#START_PROCESS} which will start the workflow definition.
- * <p> You can specify the start nodes at {@link RunWorkflowCommandParam}
+ * 运行工作流命令处理器
+ * 
+ * 这个类是工作流启动的核心处理器，负责处理START_PROCESS类型的命令，
+ * 将工作流定义转换为可执行的工作流实例，并构建完整的执行图。
+ * 
+ * 主要功能：
+ * 1. 基于命令生成新的工作流实例
+ * 2. 合并命令参数和工作流全局参数
+ * 3. 构建工作流执行图（DAG拓扑结构）
+ * 4. 创建任务执行节点和依赖关系
+ * 5. 支持指定启动节点的部分执行
+ * 
+ * 工作流程：
+ * 1. 解析命令，获取工作流定义和参数
+ * 2. 创建工作流实例，设置状态为RUNNING
+ * 3. 构建执行图，创建所有任务节点
+ * 4. 建立任务间的依赖关系
+ * 5. 返回完整的执行上下文
+ * 
+ * 简单理解：就像一个"项目启动专员"，收到启动指令后，
+ * 把项目计划书（工作流定义）变成具体的执行方案（工作流实例和执行图）。
  */
 @Component
 public class RunWorkflowCommandHandler extends AbstractCommandHandler {
@@ -73,25 +92,47 @@ public class RunWorkflowCommandHandler extends AbstractCommandHandler {
     private CuringParamsService curingParamsService;
 
     /**
-     * Will generate a new workflow instance based on the command.
+     * 组装工作流实例
+     * 
+     * 基于命令生成一个新的工作流实例，设置必要的属性和状态。
+     * 
+     * @param workflowExecuteContextBuilder 工作流执行上下文构建器
      */
     @Override
     protected void assembleWorkflowInstance(final WorkflowExecuteContextBuilder workflowExecuteContextBuilder) {
         final WorkflowDefinition workflowDefinition = workflowExecuteContextBuilder.getWorkflowDefinition();
         final Command command = workflowExecuteContextBuilder.getCommand();
+        // 获取已存在的工作流实例（通常在命令创建时已经创建）
         final WorkflowInstance workflowInstance = workflowInstanceDao.queryById(command.getWorkflowInstanceId());
+        
+        // 设置工作流实例为运行状态
         workflowInstance.setStateWithDesc(WorkflowExecutionStatus.RUNNING_EXECUTION, command.getCommandType().name());
+        // 设置当前Master节点为该工作流的处理节点
         workflowInstance.setHost(masterConfig.getMasterAddress());
+        // 设置命令参数
         workflowInstance.setCommandParam(command.getCommandParam());
+        // 合并命令参数和工作流全局参数
         workflowInstance.setGlobalParams(mergeCommandParamsWithWorkflowParams(command, workflowDefinition));
+        
+        // 更新数据库中的工作流实例
         workflowInstanceDao.upsertWorkflowInstance(workflowInstance);
         workflowExecuteContextBuilder.setWorkflowInstance(workflowInstance);
     }
 
+    /**
+     * 组装工作流执行图
+     * 
+     * 基于工作流图构建完整的执行图，包含所有任务节点和依赖关系。
+     * 这是工作流执行的核心数据结构。
+     * 
+     * @param workflowExecuteContextBuilder 工作流执行上下文构建器
+     */
     @Override
     protected void assembleWorkflowExecutionGraph(final WorkflowExecuteContextBuilder workflowExecuteContextBuilder) {
         final IWorkflowGraph workflowGraph = workflowExecuteContextBuilder.getWorkflowGraph();
         final WorkflowExecutionGraph workflowExecutionGraph = new WorkflowExecutionGraph();
+        
+        // 任务执行节点创建器 - 为每个任务创建执行节点
         final BiConsumer<String, Set<String>> taskExecutionRunnableCreator = (task, successors) -> {
             final TaskExecutionRunnableBuilder taskExecutionRunnableBuilder =
                     TaskExecutionRunnableBuilder
@@ -104,10 +145,13 @@ public class RunWorkflowCommandHandler extends AbstractCommandHandler {
                             .workflowEventBus(workflowExecuteContextBuilder.getWorkflowEventBus())
                             .applicationContext(applicationContext)
                             .build();
+            // 将任务节点添加到执行图中
             workflowExecutionGraph.addNode(new TaskExecutionRunnable(taskExecutionRunnableBuilder));
+            // 添加任务间的依赖边
             workflowExecutionGraph.addEdge(task, successors);
         };
 
+        // 工作流图拓扑逻辑访问器 - 按照DAG拓扑顺序遍历所有任务
         final WorkflowGraphTopologyLogicalVisitor workflowGraphTopologyLogicalVisitor =
                 WorkflowGraphTopologyLogicalVisitor.builder()
                         .taskDependType(workflowExecuteContextBuilder.getWorkflowInstance().getTaskDependType())
@@ -115,32 +159,49 @@ public class RunWorkflowCommandHandler extends AbstractCommandHandler {
                         .fromTask(parseStartNodesFromWorkflowInstance(workflowExecuteContextBuilder))
                         .doVisitFunction(taskExecutionRunnableCreator)
                         .build();
+        // 执行拓扑遍历，构建完整的执行图
         workflowGraphTopologyLogicalVisitor.visit();
 
         workflowExecuteContextBuilder.setWorkflowExecutionGraph(workflowExecutionGraph);
     }
 
     /**
-     * Merge the command params with the workflow params.
-     * <p> If there are duplicate keys, the command params will override the workflow params.
+     * 合并命令参数与工作流参数
+     * 
+     * 将命令中的参数与工作流定义中的全局参数合并。
+     * 如果有重复的键，命令参数将覆盖工作流参数。
+     * 
+     * @param command 命令对象，包含执行时的参数
+     * @param workflowDefinition 工作流定义，包含默认的全局参数
+     * @return 合并后的参数JSON字符串
      */
     private String mergeCommandParamsWithWorkflowParams(final Command command,
                                                         final WorkflowDefinition workflowDefinition) {
+        // 解析命令参数
         final List<Property> commandParams =
                 Optional.ofNullable(JSONUtils.parseObject(command.getCommandParam(), ICommandParam.class))
                         .map(ICommandParam::getCommandParams)
                         .orElse(null);
+        // 解析工作流全局参数
         final List<Property> globalParamsList = JSONUtils.toList(workflowDefinition.getGlobalParams(), Property.class);
         Map<String, Property> finalParams = new HashMap<>();
+        
+        // 先添加工作流全局参数
         if (CollectionUtils.isNotEmpty(globalParamsList)) {
             globalParamsList.forEach(globalParam -> finalParams.put(globalParam.getProp(), globalParam));
         }
+        // 再添加命令参数，会覆盖同名的全局参数
         if (CollectionUtils.isNotEmpty(commandParams)) {
             commandParams.forEach(commandParam -> finalParams.put(commandParam.getProp(), commandParam));
         }
         return JSONUtils.toJsonString(finalParams.values());
     }
 
+    /**
+     * 返回该处理器匹配的命令类型
+     * 
+     * @return START_PROCESS命令类型，用于手动启动工作流
+     */
     @Override
     public CommandType commandType() {
         return CommandType.START_PROCESS;

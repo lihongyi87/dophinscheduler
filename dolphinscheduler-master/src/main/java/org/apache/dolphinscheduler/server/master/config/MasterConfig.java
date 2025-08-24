@@ -34,6 +34,19 @@ import org.springframework.validation.Errors;
 import org.springframework.validation.Validator;
 import org.springframework.validation.annotation.Validated;
 
+/**
+ * DolphinScheduler Master节点配置类
+ * 
+ * 这个类存储了Master节点运行所需的所有配置参数。
+ * 可以把它想象为一个“设置面板”，里面有各种可以调节的参数。
+ * 
+ * 主要包括：
+ * - 网络配置：监听端口、心跳间隔等
+ * - 性能配置：线程数量、负载保护阈值等
+ * - 调度配置：工作流刷新间隔、负载均衡策略等
+ * 
+ * @ConfigurationProperties 注解表示这个类会从 application.yaml 中的 master 配置项加载值
+ */
 @Data
 @Validated
 @Configuration
@@ -42,21 +55,69 @@ import org.springframework.validation.annotation.Validated;
 public class MasterConfig implements Validator {
 
     /**
-     * The master RPC server listen port.
+     * Master RPC服务器监听端口
+     * 
+     * 这个端口用于接收以下请求：
+     * - Worker节点的任务状态上报
+     * - 其他Master节点的协调通信
+     * - API服务的工作流操作请求
+     * 
+     * 默认值：5678
      */
     private int listenPort = 5678;
 
+    /**
+     * 工作流事件总线触发线程数量
+     * 
+     * 这些线程负责处理工作流生命周期事件，如：
+     * - 工作流启动事件
+     * - 任务完成事件
+     * - 工作流失败事件
+     * 
+     * 默认值：CPU核数 * 2 + 1（优化的经验公式）
+     */
     private int workflowEventBusFireThreadCount = Runtime.getRuntime().availableProcessors() * 2 + 1;
 
+    /**
+     * 逻辑任务配置 - 用于配置在Master端执行的任务
+     * 
+     * 逻辑任务包括：
+     * - 条件判断任务：根据条件决定后续流程
+     * - 子工作流任务：调用其他工作流
+     * - Switch任务：根据参数选择不同的执行分支
+     */
     private LogicTaskConfig logicTaskConfig = new LogicTaskConfig();
 
     /**
-     * Master heart beat task execute interval.
+     * Master心跳任务执行间隔
+     * 
+     * Master节点会定期向注册中心发送心跳信号，包含：
+     * - 节点健康状态
+     * - 当前资源使用情况（CPU、内存等）
+     * - 工作负载情况
+     * 
+     * 默认值：10秒
      */
     private Duration maxHeartbeatInterval = Duration.ofSeconds(10);
 
+    /**
+     * Master服务器负载保护配置
+     * 
+     * 负载保护机制用于防止Master节点过载：
+     * - 当CPU使用率过高时，拒绝接收新的工作流
+     * - 当内存使用率过高时，限制并发执行的任务数量
+     * - 当磁盘空间不足时，暴停新任务的创建
+     */
     private MasterServerLoadProtectionConfig serverLoadProtection = new MasterServerLoadProtectionConfig();
 
+    /**
+     * Worker组刷新间隔
+     * 
+     * Master会定期从注册中心拉取最新的Worker节点列表，
+     * 以便进行任务分发时能获取到最新的节点信息。
+     * 
+     * 默认值：5分钟
+     */
     private Duration workerGroupRefreshInterval = Duration.ofMinutes(5);
 
     private CommandFetchStrategy commandFetchStrategy = new CommandFetchStrategy();

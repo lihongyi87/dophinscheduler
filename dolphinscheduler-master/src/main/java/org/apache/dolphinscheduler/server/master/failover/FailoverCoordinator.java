@@ -45,39 +45,90 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/**
+ * 故障转移协调器
+ * 
+ * 这个类是DolphinScheduler高可用性的核心组件之一，负责处理节点故障和任务转移。
+ * 当Master或Worker节点出现故障时，这个组件会自动发现并处理故障节点的任务。
+ * 
+ * 主要功能：
+ * 1. 全局Master故障转移：处理Master节点崩溃后的任务重新分配
+ * 2. Master节点故障转移：将故障 Master 的任务转移到其他 Master
+ * 3. Worker节点故障转移：将正在故障Worker上执行的任务重新调度
+ * 
+ * 简单理解：就像一个智能的“应急指挥中心”，在系统出现问题时自动重新组织工作。
+ */
 @Slf4j
 @Component
 public class FailoverCoordinator implements IFailoverCoordinator {
 
+    /**
+     * 注册中心客户端 - 用于检测节点状态和获取集群信息
+     */
     @Autowired
     private RegistryClient registryClient;
 
+    /**
+     * 集群管理器 - 管理所有Master和Worker节点的元数据
+     */
     @Autowired
     private ClusterManager clusterManager;
 
+    /**
+     * 工作流仓库 - 管理当前正在运行的工作流实例
+     */
     @Autowired
     private IWorkflowRepository workflowRepository;
 
+    /**
+     * 任务故障转移处理器 - 专门处理单个任务的故障转移
+     */
     @Autowired
     private TaskFailover taskFailover;
 
+    /**
+     * 工作流实例数据访问对象 - 用于查询数据库中的工作流信息
+     */
     @Autowired
     private WorkflowInstanceDao workflowInstanceDao;
 
+    /**
+     * 工作流故障转移处理器 - 专门处理整个工作流的故障转移
+     */
     @Autowired
     private WorkflowFailover workflowFailover;
 
+    /**
+     * 全局Master故障转移处理
+     * 
+     * 当集群启动或者检测到Master节点故障时，会触发这个方法。
+     * 它会扫描所有在数据库中但没有正常Master处理的工作流，
+     * 并将它们重新分配给健康的Master节点。
+     * 
+     * 简单理解：就像公司的“项目重新分配会议”，
+     * 当某个项目经理离职后，需要重新分配他的项目给其他经理。
+     * 
+     * @param globalMasterFailoverEvent 全局Master故障转移事件
+     */
     @Override
     public void globalMasterFailover(final GlobalMasterFailoverEvent globalMasterFailoverEvent) {
+        // 创建计时器，用于统计故障转移耗时
         final StopWatch failoverTimeCost = StopWatch.createStarted();
-        log.info("Global master failover starting");
+        log.info("全局Master故障转移开始执行");
+        
+        // 从数据库查询所有包含未完成工作流的Master地址
+        // 这些Master可能已经故障了，但它们的工作流还在数据库中
         final List<String> masterAddressWhichContainsUnFinishedWorkflow =
                 workflowInstanceDao.queryNeedFailoverMasters();
+                
+        // 遍历每个潜在故障Master的地址
         for (final String masterAddress : masterAddressWhichContainsUnFinishedWorkflow) {
+            // 检查这个Master是否还活着（可能只是网络问题而不是真的故障）
             final Optional<MasterServerMetadata> aliveMasterOptional =
                     clusterManager.getMasterClusters().getServer(masterAddress);
+                    
             if (aliveMasterOptional.isPresent()) {
-                // If the master is alive, then we use the alive master's startup time as the failover deadline.
+                // 如果这个Master还活着，那么使用这个Master的启动时间作为故障转移的截止时间
                 final MasterServerMetadata aliveMasterServerMetadata = aliveMasterOptional.get();
                 log.info("The master[{}] is alive, do global master failover on it", aliveMasterServerMetadata);
                 doMasterFailover(

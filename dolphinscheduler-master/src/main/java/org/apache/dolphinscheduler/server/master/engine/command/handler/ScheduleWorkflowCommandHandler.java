@@ -23,11 +23,33 @@ import org.apache.dolphinscheduler.scheduler.api.SchedulerApi;
 import org.springframework.stereotype.Component;
 
 /**
- * Used to handle the {@link CommandType#SCHEDULER} which will start the workflow definition by {@link SchedulerApi}.
+ * 定时调度工作流命令处理器
+ * 
+ * 这个类专门处理定时调度类型的工作流启动命令。当调度器触发定时任务时，
+ * 会生成SCHEDULER类型的命令，由这个处理器负责处理。
+ * 
+ * 主要功能：
+ * 1. 处理SCHEDULER类型的命令
+ * 2. 通过SchedulerApi启动工作流定义
+ * 3. 继承RunWorkflowCommandHandler的所有功能
+ * 4. 专门用于定时触发的工作流执行
+ * 
+ * 与父类的关系：
+ * - 继承自RunWorkflowCommandHandler，复用其工作流启动逻辑
+ * - 只是命令类型不同（SCHEDULER vs START_PROCESS）
+ * - 处理流程完全一致
+ * 
+ * 简单理解：就像一个专门处理"定时启动工作流"指令的调度员，
+ * 当定时器到时间时，负责启动对应的工作流。
  */
 @Component
 public class ScheduleWorkflowCommandHandler extends RunWorkflowCommandHandler {
 
+    /**
+     * 返回该处理器匹配的命令类型
+     * 
+     * @return SCHEDULER命令类型，用于定时调度触发的工作流
+     */
     @Override
     public CommandType commandType() {
         return CommandType.SCHEDULER;

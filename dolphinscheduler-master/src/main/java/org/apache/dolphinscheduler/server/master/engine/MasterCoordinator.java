@@ -30,14 +30,41 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * The MasterCoordinator is singleton at the clusters, which is used to do some control work, e.g manage the {@link ITaskGroupCoordinator}
+ * Master协调器
+ * 
+ * 这个类是集群中的单例组件，负责协调和管理Master节点的各种控制工作。
+ * 它基于高可用性(HA)机制工作，确保在分布式环境中只有一个活跃的协调器。
+ * 
+ * 主要功能：
+ * 1. 管理任务组协调器（TaskGroupCoordinator）
+ * 2. 实现Master节点的高可用性选主
+ * 3. 处理Master节点状态变化（Active/StandBy切换）
+ * 4. 确保关键资源的单点控制和协调
+ * 
+ * 工作原理：
+ * - 使用注册中心进行选主，只有一个Master节点能成为Active状态
+ * - Active状态时启动各种协调服务
+ * - StandBy状态时停止协调服务，等待接管
+ * 
+ * 简单理解：就像一个"总指挥中心"，在多个Master节点中选出一个
+ * 作为总指挥，负责整个集群的任务组管理和资源协调。
  */
 @Slf4j
 @Component
 public class MasterCoordinator extends AbstractHAServer {
 
+    /**
+     * 任务组协调器 - 负责管理和协调任务组的执行
+     */
     private final ITaskGroupCoordinator taskGroupCoordinator;
 
+    /**
+     * 构造MasterCoordinator
+     * 
+     * @param registry 注册中心客户端，用于选主和状态管理
+     * @param masterConfig Master配置信息
+     * @param taskGroupCoordinator 任务组协调器实例
+     */
     public MasterCoordinator(final Registry registry,
                              final MasterConfig masterConfig,
                              final ITaskGroupCoordinator taskGroupCoordinator) {
@@ -46,34 +73,68 @@ public class MasterCoordinator extends AbstractHAServer {
                 RegistryNodeType.MASTER_COORDINATOR.getRegistryPath(),
                 masterConfig.getMasterAddress());
         this.taskGroupCoordinator = taskGroupCoordinator;
+        // 添加状态变化监听器，当选主状态发生变化时自动启动/停止协调器
         addServerStatusChangeListener(new MasterCoordinatorListener(taskGroupCoordinator));
     }
 
+    /**
+     * 启动Master协调器
+     * 
+     * 启动高可用性选主机制，开始参与Master节点的选举。
+     * 只有被选为Leader的节点才会变为Active状态。
+     */
     @Override
     public void start() {
         super.start();
         log.info("MasterCoordinator started...");
     }
 
+    /**
+     * 关闭Master协调器
+     * 
+     * 停止所有协调服务，释放相关资源，退出选主竞争。
+     */
     @Override
     public void close() {
         taskGroupCoordinator.close();
         log.info("MasterCoordinator shutdown...");
     }
 
+    /**
+     * Master协调器状态变化监听器
+     * 
+     * 这个内部类监听Master协调器的状态变化，
+     * 当状态从StandBy变为Active时启动任务组协调器，
+     * 当状态从Active变为StandBy时停止任务组协调器。
+     */
     public static class MasterCoordinatorListener extends AbstractServerStatusChangeListener {
 
+        /**
+         * 任务组协调器引用
+         */
         private final ITaskGroupCoordinator taskGroupCoordinator;
 
         public MasterCoordinatorListener(ITaskGroupCoordinator taskGroupCoordinator) {
             this.taskGroupCoordinator = checkNotNull(taskGroupCoordinator);
         }
 
+        /**
+         * 变为Active状态时的处理
+         * 
+         * 当此Master节点被选为Leader时，启动任务组协调器，
+         * 开始执行任务组的管理和协调工作。
+         */
         @Override
         public void changeToActive() {
             taskGroupCoordinator.start();
         }
 
+        /**
+         * 变为StandBy状态时的处理
+         * 
+         * 当此Master节点失去Leader地位时，停止任务组协调器，
+         * 释放资源，等待下次被选为Leader。
+         */
         @Override
         public void changeToStandBy() {
             taskGroupCoordinator.close();

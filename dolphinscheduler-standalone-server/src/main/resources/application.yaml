@@ -81,7 +81,22 @@ mybatis-plus:
     banner: false
 
 registry:
-  type: jdbc
+  type: raft
+
+# Optimized Raft configuration for embedded registry
+raft:
+  peers: ["127.0.0.1:9234"]  # Single node for standalone development
+  node-address: "127.0.0.1:9234"
+  data-dir: "./data/raft"
+  election-timeout-ms: 2000      # Optimized: increased for stability
+  heartbeat-interval-ms: 500     # Optimized: reduced frequency
+  snapshot-interval-secs: 600    # Optimized: longer interval to reduce I/O
+  enable-metrics: true
+  max-logs-batch-size: 1024      # Batch size for log replication
+  lease-cleanup-interval-secs: 30 # Cleanup interval for expired nodes
+  enable-leader-lease: true       # Enable leader lease optimization
+  leader-lease-timeout-ms: 10000  # Leader lease timeout
+  max-concurrent-requests: 100    # Maximum concurrent requests
 
 security:
   authentication:

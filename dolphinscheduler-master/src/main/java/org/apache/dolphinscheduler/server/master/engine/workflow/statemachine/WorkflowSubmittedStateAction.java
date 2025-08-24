@@ -34,19 +34,52 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * The workflow submitted state should transform to running state when handle command.
+ * 工作流“已提交”状态操作类
+ * 
+ * 这个类处理工作流处于“已提交”(SUBMITTED)状态时的各种操作和状态转换。
+ * 
+ * 状态说明：
+ * - SUBMITTED状态表示工作流已经被提交到系统中，但还没有开始执行
+ * - 这是工作流的初始状态，等待调度器分配资源并开始执行
+ * 
+ * 允许的状态转换：
+ * - SUBMITTED → RUNNING：开始执行工作流
+ * - SUBMITTED → STOP：用户取消工作流
+ * 
+ * 简单理解：就像一个“已提交但还没开始处理的工单”，
+ * 只能等待开始处理或者被取消。
  */
 @Slf4j
 @Component
 public class WorkflowSubmittedStateAction extends AbstractWorkflowStateAction {
 
+    /**
+     * 处理工作流启动事件
+     * 
+     * 在SUBMITTED状态下，工作流不应该又接收到启动事件。
+     * 这通常表示系统出现了重复处理或者状态不一致的问题。
+     * 
+     * @param workflowExecutionRunnable 工作流执行对象
+     * @param workflowStartEvent 工作流启动事件
+     */
     @Override
     public void onStartEvent(final IWorkflowExecutionRunnable workflowExecutionRunnable,
                              final WorkflowStartLifecycleEvent workflowStartEvent) {
+        // 检查状态是否匹配，不匹配则抛出异常
         throwExceptionIfStateIsNotMatch(workflowExecutionRunnable);
+        // 记录警告日志，提示这个操作不应该在当前状态下执行
         logWarningIfCannotDoAction(workflowExecutionRunnable, workflowStartEvent);
     }
 
+    /**
+     * 处理工作流拓扑逻辑转换事件
+     * 
+     * 在SUBMITTED状态下，工作流还没有开始执行，不应该有任务完成事件。
+     * 这通常表示系统状态出现了问题。
+     * 
+     * @param workflowExecutionRunnable 工作流执行对象
+     * @param workflowTopologyLogicalTransitionWithTaskFinishEvent 任务完成转换事件
+     */
     @Override
     public void onTopologyLogicalTransitionEvent(
                                                  final IWorkflowExecutionRunnable workflowExecutionRunnable,
@@ -55,6 +88,15 @@ public class WorkflowSubmittedStateAction extends AbstractWorkflowStateAction {
         logWarningIfCannotDoAction(workflowExecutionRunnable, workflowTopologyLogicalTransitionWithTaskFinishEvent);
     }
 
+    /**
+     * 处理工作流暂停事件
+     * 
+     * 在SUBMITTED状态下，工作流还没有开始执行，不需要暂停操作。
+     * 用户可以直接取消工作流而不需要暂停。
+     * 
+     * @param workflowExecutionRunnable 工作流执行对象
+     * @param workflowPauseEvent 工作流暂停事件
+     */
     @Override
     public void onPauseEvent(final IWorkflowExecutionRunnable workflowExecutionRunnable,
                              final WorkflowPauseLifecycleEvent workflowPauseEvent) {
