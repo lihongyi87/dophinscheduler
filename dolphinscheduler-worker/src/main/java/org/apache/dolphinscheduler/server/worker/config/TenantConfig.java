@@ -19,9 +19,25 @@ package org.apache.dolphinscheduler.server.worker.config;
 
 import lombok.Data;
 
+/**
+ * 租户配置类
+ * 
+ * 用于配置Worker节点的租户相关设置，包括自动创建租户和默认租户的启用状态
+ */
 @Data
 public class TenantConfig {
 
+    /**
+     * 是否启用自动创建租户功能
+     * 当设置为true时，系统会自动为新用户创建对应的租户
+     * 默认值：true
+     */
     private boolean autoCreateTenantEnabled = true;
+    
+    /**
+     * 是否启用默认租户功能
+     * 当设置为true时，系统会使用默认租户来执行任务
+     * 默认值：false
+     */
     private boolean defaultTenantEnabled = false;
 }
