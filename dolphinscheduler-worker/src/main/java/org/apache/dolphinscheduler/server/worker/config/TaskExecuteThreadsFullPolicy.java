@@ -17,8 +17,23 @@
 
 package org.apache.dolphinscheduler.server.worker.config;
 
+/**
+ * 任务执行线程池满时的处理策略枚举
+ * 
+ * 定义了当Worker节点的任务执行线程池达到最大容量时的处理策略
+ */
 public enum TaskExecuteThreadsFullPolicy {
+    
+    /**
+     * 继续策略
+     * 当线程池满时，继续接受新的任务执行请求
+     */
     CONTINUE,
+    
+    /**
+     * 拒绝策略
+     * 当线程池满时，拒绝接受新的任务执行请求
+     */
     REJECT,
     ;
 }
