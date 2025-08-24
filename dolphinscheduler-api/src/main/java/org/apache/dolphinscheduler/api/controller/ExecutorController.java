@@ -73,7 +73,43 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
- * executor controller
+ * 工作流执行控制器
+ * 
+ * 这是DolphinScheduler中最重要的控制器之一，负责工作流和任务的执行管理。
+ * 类比：一个项目指挥中心，负责发起项目执行、管理执行过程、控制执行策略。
+ * 
+ * 主要功能：
+ * 1. 工作流触发执行：支持立即执行、定时执行、补数据执行等多种方式
+ * 2. 任务实例执行：单独触发某个任务的执行，用于故障修复和测试
+ * 3. 批量操作：支持批量启动多个工作流实例，适用于大规模数据处理
+ * 4. 执行策略控制：灵活的失败策略、告警策略、优先级控制等
+ * 5. 依赖关系处理：支持任务依赖、数据依赖等复杂依赖关系的处理
+ * 
+ * 执行类型支持：
+ * - START_PROCESS：正常启动工作流
+ * - START_CURRENT_TASK_PROCESS：从当前任务开始执行
+ * - RECOVER_TOLERANCE_FAULT_PROCESS：容错恢复执行  
+ * - RECOVER_SERIAL_WAIT：串行等待恢复执行
+ * - COMPLEMENT_DATA：补充历史数据执行
+ * - SCHEDULER：调度器自动触发执行
+ * - REPEAT_RUNNING：重复运行
+ * - PAUSE：暂停执行
+ * - STOP：停止执行
+ * 
+ * 安全和审计：
+ * - 操作审计：关键操作自动记录审计日志
+ * - 权限控制：基于项目和用户权限进行访问控制
+ * - 参数验证：严格的参数校验防止恶意操作
+ * - 异常处理：完善的异常处理机制保障系统稳定性
+ * 
+ * 类比理解：
+ * 这个控制器就像是一个"项目执行指挥部"：
+ * - 接收执行指令（API请求）
+ * - 制定执行计划（参数配置）
+ * - 分发执行任务（调用执行服务）
+ * - 监控执行进度（状态管理）
+ * - 处理执行异常（异常恢复）
+ * - 记录执行日志（审计追踪）
  */
 @Tag(name = "EXECUTOR_TAG")
 @RestController
@@ -81,6 +117,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @Slf4j
 public class ExecutorController extends BaseController {
 
+    /**
+     * 执行服务
+     * 
+     * 负责具体的工作流和任务执行逻辑，是执行控制器的核心依赖。
+     * 处理各种复杂的执行场景，包括正常执行、恢复执行、补数据执行等。
+     * 类比：项目执行部门的专业团队，负责将执行计划转化为具体行动。
+     */
     @Autowired
     private ExecutorService execService;
 

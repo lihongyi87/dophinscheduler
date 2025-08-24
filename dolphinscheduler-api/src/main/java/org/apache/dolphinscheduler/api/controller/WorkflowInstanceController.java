@@ -63,7 +63,33 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
- * workflow instance controller
+ * 工作流实例控制器
+ * 
+ * 这是DolphinScheduler API层中处理工作流实例管理的核心控制器。
+ * 类比：项目管理系统中的"任务执行记录"管理页面，用于查看、管理和监控工作流的执行历史。
+ * 
+ * 主要功能：
+ * 1. 工作流实例查询：支持分页查询、按条件筛选、按执行时长排序等
+ * 2. 实例详情查看：查看工作流实例的详细执行信息和任务列表  
+ * 3. 实例状态管理：更新、删除工作流实例及其相关数据
+ * 4. 子工作流关系：处理父子工作流之间的查询和关联关系
+ * 5. 变量管理：查看工作流实例中的全局变量和局部变量
+ * 6. 甘特图展示：以时间轴方式展示工作流和任务的执行进度
+ * 
+ * API设计特点：
+ * - RESTful风格：使用标准的HTTP方法(GET/POST/PUT/DELETE)
+ * - 路径参数：通过/projects/{projectCode}/workflow-instances定义资源层次
+ * - 参数验证：支持分页参数校验和参数转义处理
+ * - 异常处理：使用@ApiException统一异常响应格式
+ * - 审计日志：关键操作自动记录操作日志用于审计追踪
+ * 
+ * 类比理解：
+ * 这个控制器就像是一个"工作执行记录管理员"，负责：
+ * - 查找历史执行记录（分页查询）
+ * - 查看具体执行详情（实例详情）
+ * - 管理执行记录（更新删除）
+ * - 追踪任务关系（父子工作流）
+ * - 监控执行进度（甘特图）
  */
 @Tag(name = "WORKFLOW_INSTANCE_TAG")
 @RestController
@@ -71,24 +97,43 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @Slf4j
 public class WorkflowInstanceController extends BaseController {
 
+    /**
+     * 工作流实例服务
+     * 
+     * 注入的业务服务层，处理具体的工作流实例管理逻辑。
+     * 控制器只负责HTTP请求处理，具体的业务逻辑委托给服务层执行。
+     * 类比：管理员（Controller）接收用户请求，然后交给专业人员（Service）处理。
+     */
     @Autowired
     private WorkflowInstanceService workflowInstanceService;
 
     /**
-     * query workflow instance list paging
-     *
-     * @param loginUser login user
-     * @param projectCode project code
-     * @param pageNo page number
-     * @param pageSize page size
-     * @param workflowDefinitionCode workflow definition code
-     * @param searchVal search value
-     * @param stateType state type
-     * @param host host
-     * @param startTime start time
-     * @param endTime end time
-     * @param otherParamsJson otherParamsJson handle other params
-     * @return workflow instance list
+     * 分页查询工作流实例列表
+     * 
+     * 这是最常用的API接口，用于在前端页面展示工作流的执行历史记录。
+     * 支持多种查询条件的组合筛选，帮助用户快速定位目标工作流实例。
+     * 
+     * 类比：在图书馆系统中查询借阅记录，可以按书名、借阅人、时间段等条件筛选。
+     * 
+     * 查询条件说明：
+     * @param loginUser 登录用户 - 用于权限验证，确保用户只能查看有权限的项目数据
+     * @param projectCode 项目编码 - 指定查询哪个项目下的工作流实例
+     * @param pageNo 页码 - 分页参数，指定查询第几页（从1开始）
+     * @param pageSize 每页大小 - 分页参数，指定每页显示多少条记录
+     * @param workflowDefinitionCode 工作流定义编码 - 可选，筛选特定工作流定义的实例
+     * @param searchVal 搜索值 - 可选，支持模糊搜索工作流实例名称
+     * @param stateType 状态类型 - 可选，按执行状态筛选（成功、失败、运行中等）
+     * @param host 主机地址 - 可选，筛选在特定主机上执行的实例
+     * @param startTime 开始时间 - 可选，时间范围筛选的起始时间
+     * @param endTime 结束时间 - 可选，时间范围筛选的结束时间
+     * @param otherParamsJson 其他参数JSON - 可选，扩展参数，用于处理特殊筛选条件
+     * @return 工作流实例分页列表，包含实例基本信息、执行状态、时间等
+     * 
+     * 实现特点：
+     * 1. 参数校验：自动校验分页参数的合法性（页码>0，页面大小在合理范围）
+     * 2. 参数转义：对搜索值进行转义处理，防止SQL注入攻击
+     * 3. 权限控制：基于登录用户的权限，只返回用户有权查看的数据
+     * 4. 性能优化：使用分页查询避免大量数据加载影响性能
      */
     @Operation(summary = "queryWorkflowInstanceListPaging", description = "QUERY_WORKFLOW_INSTANCE_LIST_NOTES")
     @Parameters({
