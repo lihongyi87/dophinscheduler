@@ -111,12 +111,30 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
+/**
+ * 工作流实例服务实现类
+ *
+ * <p>该类实现了工作流实例的管理功能。工作流实例是工作流定义的
+ * 一次具体执行，记录了整个工作流的执行状态、参数、日志等信息。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>查询工作流实例列表和详情</li>
+ *   <li>更新工作流实例状态</li>
+ *   <li>删除工作流实例</li>
+ *   <li>查看甘特图和依赖关系</li>
+ *   <li>管理工作流参数和变量</li>
+ *   <li>查询子工作流关系</li>
+ * </ul>
+ */
 @Service
 @Slf4j
 public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements WorkflowInstanceService {
 
+    /** 任务类型常量 */
     public static final String TASK_TYPE = "taskType";
 
+    /** 本地参数列表常量 */
     public static final String LOCAL_PARAMS_LIST = "localParamsList";
 
     @Autowired
@@ -189,8 +207,9 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
     @Override
     public Map<String, Object> queryTopNLongestRunningWorkflowInstance(User loginUser, long projectCode, int size,
                                                                        String startTime, String endTime) {
+        // 根据项目编码查询项目信息
         Project project = projectMapper.queryByCode(projectCode);
-        // check user access for project
+        // 检查用户对项目的访问权限
         Map<String, Object> result =
                 projectService.checkProjectAndAuth(loginUser, project, projectCode,
                         WORKFLOW_INSTANCE);
@@ -198,31 +217,40 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
             return result;
         }
 
+        // 验证查询数量参数不能为负数
         if (0 > size) {
             putMsg(result, Status.NEGTIVE_SIZE_NUMBER_ERROR, size);
             return result;
         }
+        // 验证开始时间参数不能为空
         if (Objects.isNull(startTime)) {
             putMsg(result, Status.DATA_IS_NULL, Constants.START_TIME);
             return result;
         }
+        // 将开始时间字符串转换为Date对象
         Date start = DateUtils.stringToDate(startTime);
+        // 验证结束时间参数不能为空
         if (Objects.isNull(endTime)) {
             putMsg(result, Status.DATA_IS_NULL, Constants.END_TIME);
             return result;
         }
+        // 将结束时间字符串转换为Date对象
         Date end = DateUtils.stringToDate(endTime);
+        // 检查时间转换是否成功
         if (start == null || end == null) {
             putMsg(result, Status.REQUEST_PARAMS_NOT_VALID_ERROR, Constants.START_END_DATE);
             return result;
         }
+        // 验证开始时间必须小于结束时间
         if (start.getTime() > end.getTime()) {
             putMsg(result, Status.START_TIME_BIGGER_THAN_END_TIME_ERROR, startTime, endTime);
             return result;
         }
 
+        // 查询指定时间范围内运行时间最长的前N个成功的工作流实例
         List<WorkflowInstance> workflowInstances = workflowInstanceMapper.queryTopNWorkflowInstance(size, start, end,
                 WorkflowExecutionStatus.SUCCESS, projectCode);
+        // 将查询结果放入返回数据中
         result.put(DATA_LIST, workflowInstances);
         putMsg(result, Status.SUCCESS);
         return result;
@@ -238,26 +266,32 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
      */
     @Override
     public Map<String, Object> queryWorkflowInstanceById(User loginUser, long projectCode, Integer workflowInstanceId) {
+        // 根据项目编码查询项目信息
         Project project = projectMapper.queryByCode(projectCode);
-        // check user access for project
+        // 检查用户对项目的访问权限
         Map<String, Object> result =
                 projectService.checkProjectAndAuth(loginUser, project, projectCode,
                         WORKFLOW_INSTANCE);
         if (result.get(Constants.STATUS) != Status.SUCCESS) {
             return result;
         }
+        // 根据ID查询工作流实例详细信息，如果不存在则抛出异常
         WorkflowInstance workflowInstance = processService.findWorkflowInstanceDetailById(workflowInstanceId)
                 .orElseThrow(() -> new ServiceException(WORKFLOW_INSTANCE_NOT_EXIST, workflowInstanceId));
 
+        // 查询工作流定义信息，需要指定版本号以获取准确的定义
         WorkflowDefinition workflowDefinition =
                 processService.findWorkflowDefinition(workflowInstance.getWorkflowDefinitionCode(),
                         workflowInstance.getWorkflowDefinitionVersion());
 
+        // 验证工作流定义是否存在且属于当前项目
         if (workflowDefinition == null || projectCode != workflowDefinition.getProjectCode()) {
             log.error("workflow definition does not exist, projectCode: {}.", projectCode);
             putMsg(result, Status.WORKFLOW_DEFINITION_NOT_EXIST, workflowInstanceId);
         } else {
+            // 设置工作流节点位置信息，用于前端展示
             workflowInstance.setLocations(workflowDefinition.getLocations());
+            // 生成DAG图数据，包含任务节点和依赖关系
             workflowInstance.setDagData(processService.genDagData(workflowDefinition));
             result.put(DATA_LIST, workflowInstance);
             putMsg(result, Status.SUCCESS);
@@ -322,21 +356,24 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
                                                                         Integer pageSize) {
 
         Result result = new Result();
-        // check user access for project
+        // 检查用户对项目的访问权限，无权限则抛出异常
         projectService.checkProjectAndAuthThrowException(loginUser, projectCode, WORKFLOW_INSTANCE);
 
         int[] statusArray = null;
-        // filter by state
+        // 根据状态类型构建状态数组用于过滤
         if (stateType != null) {
             statusArray = new int[]{stateType.getCode()};
         }
 
+        // 检查并解析开始时间和结束时间参数
         Date start = checkAndParseDateParameters(startDate);
         Date end = checkAndParseDateParameters(endDate);
 
+        // 创建分页对象
         Page<WorkflowInstance> page = new Page<>(pageNo, pageSize);
         PageInfo<WorkflowInstance> pageInfo = new PageInfo<>(pageNo, pageSize);
 
+        // 执行分页查询，根据多个条件过滤工作流实例
         IPage<WorkflowInstance> workflowInstanceList = workflowInstanceMapper.queryWorkflowInstanceListPaging(
                 page,
                 projectCode,
@@ -348,25 +385,33 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
                 start,
                 end);
 
+        // 获取查询结果记录
         List<WorkflowInstance> workflowInstances = workflowInstanceList.getRecords();
         List<Integer> userIds = Collections.emptyList();
+        // 收集所有执行者ID，用于批量查询用户信息
         if (CollectionUtils.isNotEmpty(workflowInstances)) {
             userIds = workflowInstances.stream().map(WorkflowInstance::getExecutorId).collect(Collectors.toList());
         }
+        // 批量查询用户信息，减少数据库访问次数
         List<User> users = usersService.queryUser(userIds);
         Map<Integer, User> idToUserMap = Collections.emptyMap();
+        // 构建用户ID到用户对象的映射，便于快速查找
         if (CollectionUtils.isNotEmpty(users)) {
             idToUserMap = users.stream().collect(Collectors.toMap(User::getId, Function.identity()));
         }
 
+        // 遍历工作流实例，补充执行时长和执行者名称信息
         for (WorkflowInstance workflowInstance : workflowInstances) {
+            // 计算工作流执行时长
             workflowInstance.setDuration(WorkflowUtils.getWorkflowInstanceDuration(workflowInstance));
+            // 根据执行者ID查找并设置执行者名称
             User executor = idToUserMap.get(workflowInstance.getExecutorId());
             if (null != executor) {
                 workflowInstance.setExecutorName(executor.getUserName());
             }
         }
 
+        // 设置分页信息
         pageInfo.setTotal((int) workflowInstanceList.getTotal());
         pageInfo.setTotalList(workflowInstances);
         result.setData(pageInfo);
@@ -448,29 +493,36 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
     @Override
     public Map<String, Object> queryTaskListByWorkflowInstanceId(User loginUser, long projectCode,
                                                                  Integer workflowInstanceId) {
+        // 根据项目编码查询项目信息
         Project project = projectMapper.queryByCode(projectCode);
-        // check user access for project
+        // 检查用户对项目的访问权限
         Map<String, Object> result =
                 projectService.checkProjectAndAuth(loginUser, project, projectCode,
                         WORKFLOW_INSTANCE);
         if (result.get(Constants.STATUS) != Status.SUCCESS) {
             return result;
         }
+        // 查询工作流实例详情，不存在则抛出异常
         WorkflowInstance workflowInstance = processService.findWorkflowInstanceDetailById(workflowInstanceId)
                 .orElseThrow(() -> new ServiceException(WORKFLOW_INSTANCE_NOT_EXIST, workflowInstanceId));
+        // 查询工作流定义信息
         WorkflowDefinition workflowDefinition =
                 workflowDefinitionMapper.queryByCode(workflowInstance.getWorkflowDefinitionCode());
+        // 验证工作流定义是否属于当前项目
         if (workflowDefinition != null && projectCode != workflowDefinition.getProjectCode()) {
             log.error("workflow definition does not exist, projectCode:{}, workflowInstanceId:{}.", projectCode,
                     workflowInstanceId);
             putMsg(result, WORKFLOW_INSTANCE_NOT_EXIST, workflowInstanceId);
             return result;
         }
+        // 查询工作流实例下所有有效的任务实例
         List<TaskInstance> taskInstanceList =
                 taskInstanceDao.queryValidTaskListByWorkflowInstanceId(workflowInstanceId);
+        // 设置任务实例的依赖结果信息
         List<TaskInstanceDependentDetails<AbstractTaskInstanceContext>> taskInstanceDependentDetailsList =
                 setTaskInstanceDependentResult(taskInstanceList);
 
+        // 构建返回结果，包含工作流状态和任务列表
         Map<String, Object> resultMap = new HashMap<>();
         resultMap.put(WORKFLOW_INSTANCE_STATE, workflowInstance.getState().toString());
         resultMap.put(TASK_LIST, taskInstanceDependentDetailsList);
@@ -638,14 +690,14 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
                                                       Boolean syncDefine,
                                                       String globalParams,
                                                       String locations, int timeout) {
-        // check user access for project
+        // 检查用户对项目的更新权限，无权限则抛出异常
         projectService.checkProjectAndAuthThrowException(loginUser, projectCode,
                 ApiFuncIdentificationConstant.INSTANCE_UPDATE);
         Map<String, Object> result = new HashMap<>();
-        // check workflow instance exists
+        // 检查工作流实例是否存在，不存在则抛出异常
         WorkflowInstance workflowInstance = processService.findWorkflowInstanceDetailById(workflowInstanceId)
                 .orElseThrow(() -> new ServiceException(WORKFLOW_INSTANCE_NOT_EXIST, workflowInstanceId));
-        // check workflow instance exists in project
+        // 查询工作流定义，验证是否属于当前项目
         WorkflowDefinition workflowDefinition0 =
                 workflowDefinitionMapper.queryByCode(workflowInstance.getWorkflowDefinitionCode());
         if (workflowDefinition0 != null && projectCode != workflowDefinition0.getProjectCode()) {
@@ -654,7 +706,7 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
             putMsg(result, WORKFLOW_INSTANCE_NOT_EXIST, workflowInstanceId);
             return result;
         }
-        // check workflow instance status
+        // 检查工作流实例状态，只有已完成的实例才能更新
         if (!workflowInstance.getState().isFinished()) {
             log.warn("workflow Instance state is {} so can not update workflow instance, workflowInstanceId:{}.",
                     workflowInstance.getState().getDesc(), workflowInstanceId);
@@ -663,22 +715,26 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
             return result;
         }
 
-        //
+        // 解析命令参数，获取时区信息
         Map<String, String> commandParamMap = JSONUtils.toMap(workflowInstance.getCommandParam());
         String timezoneId = null;
+        // 如果命令参数中没有时区信息，使用用户的默认时区
         if (commandParamMap == null || StringUtils.isBlank(commandParamMap.get(Constants.SCHEDULE_TIMEZONE))) {
             timezoneId = loginUser.getTimeZone();
         } else {
             timezoneId = commandParamMap.get(Constants.SCHEDULE_TIMEZONE);
         }
 
+        // 设置工作流实例的调度时间、全局参数、超时时间等属性
         setWorkflowInstance(workflowInstance, scheduleTime, globalParams, timeout, timezoneId);
+        // 解析任务定义JSON字符串为任务定义日志对象列表
         List<TaskDefinitionLog> taskDefinitionLogs = JSONUtils.toList(taskDefinitionJson, TaskDefinitionLog.class);
         if (taskDefinitionLogs.isEmpty()) {
             log.warn("Parameter taskDefinitionJson is empty");
             putMsg(result, Status.DATA_IS_NOT_VALID, taskDefinitionJson);
             return result;
         }
+        // 验证每个任务定义的参数合法性
         for (TaskDefinitionLog taskDefinitionLog : taskDefinitionLogs) {
             if (!checkTaskParameters(taskDefinitionLog.getTaskType(), taskDefinitionLog.getTaskParams())) {
                 log.error("Task parameters are invalid,  taskDefinitionName:{}.", taskDefinitionLog.getName());
@@ -686,6 +742,7 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
                 return result;
             }
         }
+        // 保存任务定义，如果同步定义标志为true则同步更新定义
         int saveTaskResult = processService.saveTaskDefine(loginUser, projectCode, taskDefinitionLogs, syncDefine);
         if (saveTaskResult == Constants.DEFINITION_FAILURE) {
             log.error("Update task definition error, projectCode:{}, workflowInstanceId:{}", projectCode,
@@ -825,22 +882,26 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
     @Override
     @Transactional
     public void deleteWorkflowInstanceById(User loginUser, Integer workflowInstanceId) {
+        // 查询工作流实例，不存在则抛出异常
         WorkflowInstance workflowInstance = processService.findWorkflowInstanceDetailById(workflowInstanceId)
                 .orElseThrow(() -> new ServiceException(WORKFLOW_INSTANCE_NOT_EXIST, workflowInstanceId));
+        // 根据工作流定义代码和版本查询定义信息
         WorkflowDefinition workflowDefinition = workflowDefinitionLogMapper.queryByDefinitionCodeAndVersion(
                 workflowInstance.getWorkflowDefinitionCode(), workflowInstance.getWorkflowDefinitionVersion());
 
+        // 查询工作流定义所属的项目
         Project project = projectMapper.queryByCode(workflowDefinition.getProjectCode());
-        // check user access for project
+        // 检查用户是否有删除实例的权限
         projectService.checkProjectAndAuthThrowException(loginUser, project,
                 ApiFuncIdentificationConstant.INSTANCE_DELETE);
-        // check workflow instance status
+        // 检查工作流实例状态，只有已完成的实例才能删除
         if (!workflowInstance.getState().isFinished()) {
             log.warn("workflow Instance state is {} so can not delete workflow instance, workflowInstanceId:{}.",
                     workflowInstance.getState().getDesc(), workflowInstanceId);
             throw new ServiceException(WORKFLOW_INSTANCE_STATE_OPERATION_ERROR, workflowInstance.getName(),
                     workflowInstance.getState(), "delete");
         }
+        // 执行实际的删除操作
         deleteWorkflowInstanceById(workflowInstanceId);
     }
 
@@ -914,21 +975,30 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
      */
     private Map<String, Map<String, Object>> getLocalParams(WorkflowInstance workflowInstance,
                                                             Map<String, String> timeParams) {
+        // 创建存储本地参数的Map，key为任务名称
         Map<String, Map<String, Object>> localUserDefParams = new HashMap<>();
+        // 查询工作流实例下所有有效的任务实例
         List<TaskInstance> taskInstanceList =
                 taskInstanceMapper.findValidTaskListByWorkflowInstanceId(workflowInstance.getId(), Flag.YES);
+        // 遍历每个任务实例，提取本地参数
         for (TaskInstance taskInstance : taskInstanceList) {
+            // 根据任务代码和版本查询任务定义日志
             TaskDefinitionLog taskDefinitionLog = taskDefinitionLogMapper.queryByDefinitionCodeAndVersion(
                     taskInstance.getTaskCode(), taskInstance.getTaskDefinitionVersion());
 
+            // 从任务参数中提取本地参数JSON字符串
             String localParams = JSONUtils.getNodeString(taskDefinitionLog.getTaskParams(), LOCAL_PARAMS);
             if (!StringUtils.isEmpty(localParams)) {
+                // 替换参数中的时间占位符
                 localParams = ParameterUtils.convertParameterPlaceholders(localParams, timeParams);
+                // 解析为参数属性列表
                 List<Property> localParamsList = JSONUtils.toList(localParams, Property.class);
 
+                // 构建本地参数映射，包含任务类型和参数列表
                 Map<String, Object> localParamsMap = new HashMap<>();
                 localParamsMap.put(TASK_TYPE, taskDefinitionLog.getTaskType());
                 localParamsMap.put(LOCAL_PARAMS_LIST, localParamsList);
+                // 如果参数列表不为空，添加到结果Map中
                 if (CollectionUtils.isNotEmpty(localParamsList)) {
                     localUserDefParams.put(taskDefinitionLog.getName(), localParamsMap);
                 }
@@ -1091,24 +1161,28 @@ public class WorkflowInstanceServiceImpl extends BaseServiceImpl implements Work
 
     @Override
     public void deleteWorkflowInstanceById(int workflowInstanceId) {
-        // delete task instance
+        // 删除工作流实例下的所有任务实例
         taskInstanceService.deleteByWorkflowInstanceId(workflowInstanceId);
-        // delete sub workflow instances
+        // 递归删除子工作流实例（如果存在）
         deleteSubWorkflowInstanceIfNeeded(workflowInstanceId);
-        // delete alert
+        // 删除与该工作流实例相关的所有告警信息
         alertDao.deleteByWorkflowInstanceId(workflowInstanceId);
-        // delete workflow instance
+        // 最后删除工作流实例本身
         workflowInstanceDao.deleteById(workflowInstanceId);
     }
 
     private void deleteSubWorkflowInstanceIfNeeded(int workflowInstanceId) {
+        // 查询当前工作流实例的所有子工作流实例ID
         List<Integer> subWorkflowInstanceIds = workflowInstanceMapDao.querySubWorkflowInstanceIds(workflowInstanceId);
+        // 如果没有子工作流，直接返回
         if (org.apache.commons.collections4.CollectionUtils.isEmpty(subWorkflowInstanceIds)) {
             return;
         }
+        // 递归删除每个子工作流实例
         for (Integer subWorkflowInstanceId : subWorkflowInstanceIds) {
             deleteWorkflowInstanceById(subWorkflowInstanceId);
         }
+        // 删除父子工作流的关联关系
         workflowInstanceMapDao.deleteByParentId(workflowInstanceId);
     }
 }

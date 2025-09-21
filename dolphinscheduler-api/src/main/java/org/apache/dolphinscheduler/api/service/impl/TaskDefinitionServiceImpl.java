@@ -92,7 +92,20 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.google.common.collect.Lists;
 
 /**
- * task definition service impl
+ * 任务定义服务实现类
+ *
+ * <p>该类实现了任务定义的管理功能。任务定义是工作流中的基本执行单元，
+ * 定义了任务的类型、参数、超时设置等属性。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>创建和更新任务定义</li>
+ *   <li>查询任务定义列表</li>
+ *   <li>删除任务定义</li>
+ *   <li>管理任务上下游关系</li>
+ *   <li>任务版本管理</li>
+ *   <li>任务参数验证</li>
+ * </ul>
  */
 @Service
 @Slf4j

@@ -171,6 +171,23 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.Lists;
 
+/**
+ * 工作流定义服务实现类
+ *
+ * <p>该类实现了工作流定义的管理功能。工作流定义是任务流程的模板，
+ * 定义了任务的执行顺序、依赖关系和执行参数等。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>创建和更新工作流定义</li>
+ *   <li>管理工作流版本</li>
+ *   <li>上线和下线工作流</li>
+ *   <li>导入和导出工作流</li>
+ *   <li>DAG图编辑和验证</li>
+ *   <li>工作流复制和移动</li>
+ *   <li>工作流依赖关系管理</li>
+ * </ul>
+ */
 @Service
 @Slf4j
 public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements WorkflowDefinitionService {
@@ -304,19 +321,27 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
         return result;
     }
 
+    /**
+     * 验证创建工作流的合法性
+     *
+     * @param user 用户
+     * @param workflowDefinition 工作流定义
+     */
     private void createWorkflowValid(User user, WorkflowDefinition workflowDefinition) {
+        // 检查项目是否存在
         Project project = projectMapper.queryByCode(workflowDefinition.getProjectCode());
         if (project == null) {
             throw new ServiceException(Status.PROJECT_NOT_FOUND, workflowDefinition.getProjectCode());
         }
-        // check user access for project
+        // 检查用户对项目的创建权限
         projectService.checkProjectAndAuthThrowException(user, project, WORKFLOW_CREATE);
 
+        // 检查描述长度是否超限
         if (checkDescriptionLength(workflowDefinition.getDescription())) {
             throw new ServiceException(Status.DESCRIPTION_TOO_LONG_ERROR);
         }
 
-        // check whether the new workflow definition name exist
+        // 检查工作流名称是否已存在
         WorkflowDefinition definition =
                 workflowDefinitionMapper.verifyByDefineName(project.getCode(), workflowDefinition.getName());
         if (definition != null) {
@@ -335,35 +360,51 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
     }
 
     /**
-     * create single workflow definition
+     * 创建单个工作流定义
      *
-     * @param loginUser             login user
-     * @param workflowCreateRequest the new workflow object will be created
-     * @return New WorkflowDefinition object created just now
+     * @param loginUser             登录用户
+     * @param workflowCreateRequest 要创建的新工作流对象
+     * @return 刚创建的工作流定义对象
      */
     @Override
     @Transactional
     public WorkflowDefinition createSingleWorkflowDefinition(User loginUser,
                                                              WorkflowCreateRequest workflowCreateRequest) {
+        // 将请求对象转换为工作流定义对象
         WorkflowDefinition workflowDefinition = workflowCreateRequest.convert2WorkflowDefinition();
+        // 验证创建工作流的权限和参数合法性
         this.createWorkflowValid(loginUser, workflowDefinition);
 
+        // 生成唯一的工作流代码
         workflowDefinition.setCode(CodeGenerateUtils.genCode());
+        // 设置创建者ID
         workflowDefinition.setUserId(loginUser.getId());
 
+        // 插入工作流定义到数据库
         int create = workflowDefinitionMapper.insert(workflowDefinition);
         if (create <= 0) {
             throw new ServiceException(Status.CREATE_WORKFLOW_DEFINITION_ERROR);
         }
+        // 同步工作流定义到日志表
         this.syncObj2Log(loginUser, workflowDefinition);
         return workflowDefinition;
     }
 
+    /**
+     * 创建DAG定义（包含任务和关系）
+     *
+     * @param loginUser          登录用户
+     * @param taskRelationList   任务关系列表
+     * @param workflowDefinition 工作流定义
+     * @param taskDefinitionLogs 任务定义日志列表
+     * @return 创建结果
+     */
     protected Map<String, Object> createDagDefine(User loginUser,
                                                   List<WorkflowTaskRelationLog> taskRelationList,
                                                   WorkflowDefinition workflowDefinition,
                                                   List<TaskDefinitionLog> taskDefinitionLogs) {
         Map<String, Object> result = new HashMap<>();
+        // 保存任务定义
         int saveTaskResult = processService.saveTaskDefine(loginUser, workflowDefinition.getProjectCode(),
                 taskDefinitionLogs, Boolean.TRUE);
         if (saveTaskResult == Constants.EXIT_CODE_SUCCESS) {
@@ -373,6 +414,7 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
             log.error("Save task definition error.");
             throw new ServiceException(Status.CREATE_TASK_DEFINITION_ERROR);
         }
+        // 保存工作流定义，返回版本号
         int insertVersion =
                 processService.saveWorkflowDefine(loginUser, workflowDefinition, Boolean.TRUE, Boolean.TRUE);
         if (insertVersion == 0) {
@@ -382,6 +424,7 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
             log.info("Save workflow definition complete, workflowDefinitionCode:{}, workflowDefinitionVersion:{}.",
                     workflowDefinition.getCode(), insertVersion);
         }
+        // 保存任务关系（任务之间的依赖关系）
         int insertResult = processService.saveTaskRelation(loginUser, workflowDefinition.getProjectCode(),
                 workflowDefinition.getCode(),
                 insertVersion, taskRelationList, taskDefinitionLogs, Boolean.TRUE);
@@ -396,6 +439,7 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
                     workflowDefinition.getProjectCode(), workflowDefinition.getCode(), insertVersion);
         }
 
+        // 保存工作流血缘关系（用于追踪依赖链）
         saveWorkflowLineage(workflowDefinition.getProjectCode(), workflowDefinition.getCode(),
                 insertVersion, taskDefinitionLogs);
 
@@ -456,14 +500,23 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
         return workflowTaskLineageList;
     }
 
+    /**
+     * 生成任务定义列表
+     *
+     * @param taskDefinitionJson 任务定义JSON字符串
+     * @return 任务定义日志列表
+     */
     private List<TaskDefinitionLog> generateTaskDefinitionList(String taskDefinitionJson) {
         try {
+            // 解析JSON字符串为任务定义列表
             List<TaskDefinitionLog> taskDefinitionLogs = JSONUtils.toList(taskDefinitionJson, TaskDefinitionLog.class);
+            // 检查任务列表是否为空
             if (CollectionUtils.isEmpty(taskDefinitionLogs)) {
                 log.error("Generate task definition list failed, the given taskDefinitionJson is invalided: {}",
                         taskDefinitionJson);
                 throw new ServiceException(Status.DATA_IS_NOT_VALID, taskDefinitionJson);
             }
+            // 验证每个任务的参数合法性
             for (TaskDefinitionLog taskDefinitionLog : taskDefinitionLogs) {
                 if (!checkTaskParameters(taskDefinitionLog.getTaskType(), taskDefinitionLog.getTaskParams())) {
                     log.error(

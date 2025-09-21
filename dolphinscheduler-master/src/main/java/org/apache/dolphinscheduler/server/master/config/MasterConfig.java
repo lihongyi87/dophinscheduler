@@ -120,70 +120,168 @@ public class MasterConfig implements Validator {
      */
     private Duration workerGroupRefreshInterval = Duration.ofMinutes(5);
 
+    /**
+     * 命令获取策略配置
+     *
+     * 定义Master节点如何从数据库中获取待执行的命令。
+     * 包括获取频率、数量控制、负载均衡等策略。
+     *
+     * 默认使用基于ID槽位的获取策略，在多Master环境中能有效避免重复获取。
+     */
     private CommandFetchStrategy commandFetchStrategy = new CommandFetchStrategy();
 
+    /**
+     * Worker节点负载均衡配置
+     *
+     * 用于配置Master向Worker节点分发任务时的负载均衡策略。
+     * 支持多种算法：轮询、随机、基于负载等。
+     *
+     * 主要包括：
+     * - 负载均衡算法选择
+     * - 节点权重配置
+     * - 健康检查参数
+     * - 故障转移策略
+     */
     private WorkerLoadBalancerConfigurationProperties workerLoadBalancerConfigurationProperties =
             new WorkerLoadBalancerConfigurationProperties();
 
     /**
-     * The IP address and listening port of the master server in the format 'ip:listenPort'.
+     * Master服务器地址
+     *
+     * Master节点的完整网络地址，格式为 'ip:端口'。
+     * 这个地址用于：
+     * - 其他节点连接到当前Master
+     * - 注册中心记录节点信息
+     * - 集群内节点通信
+     *
+     * 如果未手动设置，系统会自动获取本机IP和监听端口组合。
      */
     private String masterAddress;
 
     /**
-     * The registry path for the master server in the format '/nodes/master/ip:listenPort'.
+     * Master节点在注册中心的路径
+     *
+     * 在分布式注册中心（如ZooKeeper）中的完整路径，
+     * 格式为 '/nodes/master/ip:端口'。
+     *
+     * 这个路径用于：
+     * - 其他节点发现当前Master
+     * - 集群选主和故障转移
+     * - 监控和管理工具获取节点信息
+     *
+     * 系统会根据masterAddress自动生成这个路径。
      */
     private String masterRegistryPath;
 
+    /**
+     * 检查当前验证器是否支持指定的类
+     *
+     * 这是Spring Validator接口的必需方法，用于告诉Spring框架
+     * 这个验证器可以验证哪些类型的对象。
+     *
+     * @param clazz 需要验证的类类型
+     * @return true 如果可以验证该类型，false 否则
+     */
     @Override
     public boolean supports(Class<?> clazz) {
+        // 检查传入的类是否是MasterConfig类或其子类
+        // isAssignableFrom方法返回true表示clazz是MasterConfig的子类或本身
         return MasterConfig.class.isAssignableFrom(clazz);
     }
 
+    /**
+     * 验证Master配置参数的有效性
+     *
+     * 这个方法是Spring Validator接口的核心方法，在配置加载时自动执行。
+     * 它会检查所有配置项是否符合业务要求，如果有问题就报错。
+     *
+     * 验证内容包括：
+     * - 端口号必须是正数
+     * - 线程数量必须是正数
+     * - 时间间隔必须有效
+     * - 自动生成缺失的配置项
+     *
+     * @param target 要验证的配置对象
+     * @param errors Spring的错误收集器，用于记录验证失败的信息
+     */
     @Override
     public void validate(Object target, Errors errors) {
+        // 将传入的对象转换为MasterConfig类型
         MasterConfig masterConfig = (MasterConfig) target;
+
+        // 验证监听端口号是否有效（必须是正数）
         if (masterConfig.getListenPort() <= 0) {
+            // 如果端口号不是正数，记录错误信息
             errors.rejectValue("listen-port", null, "is invalidated");
         }
 
+        // 验证工作流事件总线线程数是否有效（必须是正数）
         if (masterConfig.getWorkflowEventBusFireThreadCount() <= 0) {
+            // 如果线程数不是正数，记录错误信息
             errors.rejectValue("workflow-event-bus-fire-thread-count", null, "should be a positive value");
         }
 
+        // 验证心跳间隔时间是否有效（不能是负数）
         if (masterConfig.getMaxHeartbeatInterval().toMillis() < 0) {
+            // 如果心跳间隔是负数，记录错误信息
             errors.rejectValue("max-heartbeat-interval", null, "should be a valid duration");
         }
 
+        // 验证Worker组刷新间隔是否合理（至少10秒）
+        // 太短的刷新间隔会给注册中心造成不必要的压力
         if (masterConfig.getWorkerGroupRefreshInterval().getSeconds() < 10) {
             errors.rejectValue("worker-group-refresh-interval", null, "should >= 10s");
         }
+
+        // 如果Master地址没有手动配置，则自动生成
+        // 地址格式为：本机IP:监听端口
         if (StringUtils.isEmpty(masterConfig.getMasterAddress())) {
             masterConfig.setMasterAddress(NetUtils.getAddr(masterConfig.getListenPort()));
         }
+
+        // 验证命令获取策略配置是否有效
         commandFetchStrategy.validate(errors);
+
+        // 验证Worker负载均衡配置是否有效
         workerLoadBalancerConfigurationProperties.validate(errors);
 
+        // 根据Master地址自动生成在注册中心的路径
+        // 路径格式：/nodes/master/IP:端口
         masterConfig.setMasterRegistryPath(
                 RegistryNodeType.MASTER.getRegistryPath() + "/" + masterConfig.getMasterAddress());
+
+        // 打印配置信息到日志，方便调试和运维
         printConfig();
     }
 
+    /**
+     * 打印Master配置信息到日志
+     *
+     * 这个方法在Master启动时被调用，将所有重要的配置参数输出到日志中。
+     * 主要用于：
+     * - 运维人员快速查看当前配置
+     * - 问题排查时确认配置是否正确
+     * - 配置变更后的确认
+     */
     private void printConfig() {
+        // 构建包含所有配置信息的格式化字符串
+        // 使用分隔线和缩进来提高可读性
         String config =
                 "\n****************************Master Configuration**************************************" +
-                        "\n  listen-port -> " + listenPort +
-                        "\n  workflow-event-bus-fire-thread-count -> " + workflowEventBusFireThreadCount +
-                        "\n  logic-task-config -> " + logicTaskConfig +
-                        "\n  max-heartbeat-interval -> " + maxHeartbeatInterval +
-                        "\n  server-load-protection -> " + serverLoadProtection +
-                        "\n  master-address -> " + masterAddress +
-                        "\n  master-registry-path: " + masterRegistryPath +
-                        "\n  worker-group-refresh-interval: " + workerGroupRefreshInterval +
-                        "\n  command-fetch-strategy: " + commandFetchStrategy +
-                        "\n  worker-load-balancer-configuration-properties: "
+                        "\n  listen-port -> " + listenPort +                                // RPC服务监听端口
+                        "\n  workflow-event-bus-fire-thread-count -> " + workflowEventBusFireThreadCount +  // 工作流事件处理线程数
+                        "\n  logic-task-config -> " + logicTaskConfig +                     // 逻辑任务配置
+                        "\n  max-heartbeat-interval -> " + maxHeartbeatInterval +           // 最大心跳间隔
+                        "\n  server-load-protection -> " + serverLoadProtection +          // 服务器负载保护配置
+                        "\n  master-address -> " + masterAddress +                         // Master服务器地址
+                        "\n  master-registry-path: " + masterRegistryPath +                // 注册中心路径
+                        "\n  worker-group-refresh-interval: " + workerGroupRefreshInterval + // Worker组刷新间隔
+                        "\n  command-fetch-strategy: " + commandFetchStrategy +            // 命令获取策略
+                        "\n  worker-load-balancer-configuration-properties: "              // Worker负载均衡配置
                         + workerLoadBalancerConfigurationProperties +
                         "\n****************************Master Configuration**************************************";
+
+        // 使用INFO级别输出配置信息，确保在生产环境中也能看到
         log.info(config);
     }
 }

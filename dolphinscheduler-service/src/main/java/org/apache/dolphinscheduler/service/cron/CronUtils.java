@@ -57,8 +57,28 @@ import com.cronutils.model.time.ExecutionTime;
 import com.cronutils.parser.CronParser;
 
 /**
- * // todo: this utils is heavy, it rely on quartz and corn-utils.
- * cron utils
+ * Cron表达式工具类
+ *
+ * 提供Cron表达式的解析、计算、验证等功能。
+ * 支持Quartz格式Cron表达式，用于工作流调度。
+ *
+ * 主要功能：
+ * - Cron表达式解析：将字符串解析为Cron对象
+ * - 执行时间计算：计算下次执行时间、执行时间列表
+ * - 调度周期判断：判断分钟、小时、天、周、月、年周期
+ * - 补数日期计算：计算补数任务的执行日期
+ * - 有效性验证：验证Cron表达式的正确性
+ *
+ * Cron表达式格式（Quartz）：
+ * - 秒 分 时 日 月 周 [年]
+ * - 例："0 0 12 * * ?" 表示每天中午12点执行
+ * - 例："0 0/5 * * * ?" 表示每5分钟执行一次
+ *
+ * 注意：
+ * - 依赖quartz和cron-utils库，性能开销较大
+ * - 线程安全，所有方法都是静态方法
+ *
+ * @todo 优化性能，减少依赖
  */
 @Slf4j
 public class CronUtils {
@@ -71,10 +91,13 @@ public class CronUtils {
             new CronParser(CronDefinitionBuilder.instanceDefinitionFor(QUARTZ));
 
     /**
-     * parse to cron
+     * 解析Cron表达式
      *
-     * @param cronExpression cron expression, never null
-     * @return Cron instance, corresponding to cron expression received
+     * 将Cron表达式字符串解析为Cron对象
+     *
+     * @param cronExpression Cron表达式，不能为null
+     * @return Cron实例
+     * @throws CronParseException 解析失败时抛出
      */
     public static Cron parse2Cron(String cronExpression) throws CronParseException {
         try {

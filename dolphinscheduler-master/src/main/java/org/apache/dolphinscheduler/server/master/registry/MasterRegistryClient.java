@@ -110,14 +110,20 @@ public class MasterRegistryClient implements AutoCloseable {
             // 心跳信号包含节点的健康状态、资源使用情况等信息
             this.masterHeartBeatTask = new MasterHeartBeatTask(masterConfig, masterServerLoadProtection,
                     metricsProvider, registryClient, masterCoordinator);
-            
+
             // 执行注册操作，将当前节点信息写入注册中心
+            // 这一步会创建临时节点，让其他节点知道这个Master已经上线
             registry();
-            
+
             // 添加连接状态监听器，当与注册中心的连接出现问题时进行处理
-            // 例如：连接断开时尝试重新连接，或者触发故障转移逻辑
+            // 监听器会在以下情况触发：
+            // - 网络连接断开：尝试重新连接
+            // - 会话超时：重新创建会话
+            // - 注册中心服务器故障：切换到备用服务器
             registryClient.addConnectionStateListener(new MasterConnectionStateListener(registryClient));
         } catch (Exception e) {
+            // 如果启动过程中出现任何异常，都包装成RegistryException抛出
+            // 这会导致Master服务启动失败，符合快速失败的设计原则
             throw new RegistryException("Master registry client start up error", e);
         }
     }
@@ -133,6 +139,9 @@ public class MasterRegistryClient implements AutoCloseable {
      * @param stoppable 可停止的对象，通常是MasterServer本身
      */
     public void setRegistryStoppable(IStoppable stoppable) {
+        // 将可停止对象设置到注册中心客户端
+        // 当检测到连接问题时，注册中心客户端会调用stoppable.stop()方法
+        // 这是一种防御性编程，避免Master在失去集群连接后继续工作造成数据不一致
         registryClient.setStoppable(stoppable);
     }
 
@@ -149,18 +158,20 @@ public class MasterRegistryClient implements AutoCloseable {
     @Override
     public void close() {
         // TODO: 需要取消订阅MasterRegistryDataListener，停止监听其他节点状态
-        
+
         // 停止心跳任务，不再向注册中心发送心跳信号
+        // 心跳停止后，其他节点会在超时后检测到该Master已经离线
         if (masterHeartBeatTask != null) {
             masterHeartBeatTask.shutdown();
         }
-        
+
         // 如果与注册中心的连接还在，则执行注销操作
-        // 从注册中心中删除本 Master 节点的信息
+        // 主动注销比等待心跳超时更快，能立即通知其他节点
         if (registryClient.isConnected()) {
+            // 调用注销方法，从注册中心删除本Master节点的信息
             deregister();
         }
-        
+
         log.info("Closed MasterRegistryClient");
     }
 
@@ -179,47 +190,98 @@ public class MasterRegistryClient implements AutoCloseable {
      */
     void registry() {
         log.info("Master node : {} registering to registry center", masterConfig.getMasterAddress());
-        
+
         // 获取当前Master节点在注册中心中的路径
         // 路径格式类似：/dolphinscheduler/masters/192.168.1.100:5678
         String masterRegistryPath = masterConfig.getMasterRegistryPath();
 
         // 先删除旧的注册信息，防止重复注册或者之前的残留数据
+        // 这是一种清理机制，确保从干净的状态开始注册
         registryClient.remove(masterRegistryPath);
-        
-        // 将当前节点信息作为“临时节点”存储到注册中心
+
+        // 将当前节点信息作为"临时节点"存储到注册中心
         // 临时节点的特点：当连接断开时会自动被删除
         // 存储的内容包含：节点地址、端口、资源信息等
+        // 使用心跳任务的心跳数据作为节点信息
         registryClient.persistEphemeral(masterRegistryPath, JSONUtils.toJsonString(masterHeartBeatTask.getHeartBeat()));
 
         // 验证注册是否成功，循环检查直到确认节点已经存在于注册中心
+        // 这是一个安全检查，确保注册真正生效
         while (!registryClient.checkNodeExists(NetUtils.getHost(), RegistryNodeType.MASTER)) {
             log.warn("The current master server node:{} cannot find in registry", NetUtils.getHost());
-            // 等待一段时间后再次检查
+            // 等待一段时间后再次检查，避免频繁查询给注册中心造成压力
             ThreadUtils.sleep(SLEEP_TIME_MILLIS);
         }
 
         // 注册成功后，启动心跳任务，定期向注册中心发送状态更新
+        // 心跳任务会定期更新节点的健康状态和资源使用情况
         masterHeartBeatTask.start();
-        
+
         log.info("Master node : {} registered to registry center successfully", masterConfig.getMasterAddress());
 
     }
 
+    /**
+     * 从注册中心注销当前Master节点
+     *
+     * 这个方法在Master正常关闭时执行注销操作，与异常断开不同：
+     * - 正常关闭：主动调用此方法，从注册中心删除节点信息
+     * - 异常断开：注册中心会自动检测并删除临时节点
+     *
+     * 注销步骤：
+     * 1. 从注册中心删除节点路径和数据
+     * 2. 停止心跳任务，不再发送状态更新
+     * 3. 关闭注册中心客户端连接
+     *
+     * 为什么要主动注销？
+     * 主动注销可以立即通知其他节点该Master已经下线，
+     * 而不用等待心跳超时检测，提高集群响应速度。
+     */
     public void deregister() {
         try {
+            // 从注册中心中删除该Master节点的注册信息
+            // 这会触发其他节点的监听器，通知它们该Master已经下线
+            // 删除操作是原子性的，确保状态变更的一致性
             registryClient.remove(masterConfig.getMasterRegistryPath());
             log.info("Master node : {} unRegistry to register center.", masterConfig.getMasterAddress());
+
+            // 停止心跳任务，不再向注册中心发送状态更新
+            // 这步骤确保不会有残留的心跳数据发送
             if (masterHeartBeatTask != null) {
                 masterHeartBeatTask.shutdown();
             }
+
+            // 关闭注册中心客户端连接，释放网络资源
+            // 这是最后的清理步骤，确保所有资源都被正确释放
             registryClient.close();
         } catch (Exception e) {
+            // 注销过程中的异常不应该阻止Master的关闭
+            // 记录错误日志但不抛出异常，采用降级策略
             log.error("MasterServer remove registry path exception ", e);
         }
     }
 
+    /**
+     * 检查Master注册中心客户端是否可用
+     *
+     * 这个方法用于判断当前Master节点是否能够正常与注册中心通信。
+     * 在以下场景下特别有用：
+     * 1. 健康检查：判断该Master是否还能参与集群协调
+     * 2. 故障转移：决定是否需要将任务转移到其他Master
+     * 3. 负载均衡：决定是否可以接收新的任务分配
+     *
+     * 注意：这个方法只检查网络连接状态，不代表Master本身的业务状态。
+     * 完整的健康检查还需要结合CPU、内存等资源指标。
+     *
+     * @return true 如果注册中心客户端连接正常，false 否则
+     */
     public boolean isAvailable() {
+        // 检查注册中心客户端的连接状态
+        // 这个方法返回true表示：
+        // 1. 网络连接正常
+        // 2. 会话状态有效
+        // 3. 可以正常进行读写操作
+        // 但不代表Master本身的业务处理能力正常
         return registryClient.isConnected();
     }
 }

@@ -19,6 +19,18 @@ package org.apache.dolphinscheduler.extract.base;
 
 import java.io.Serializable;
 
+/**
+ * RPC请求接口
+ *
+ * <p>定义了RPC请求的基本结构，所有RPC请求都必须实现此接口。</p>
+ *
+ * <p>主要用途：</p>
+ * <ul>
+ *   <li>作为RPC框架中请求的标准接口</li>
+ *   <li>继承Serializable接口支持网络传输</li>
+ *   <li>为具体的RPC请求实现提供统一的父接口</li>
+ * </ul>
+ */
 public interface IRpcRequest extends Serializable {
 
 }

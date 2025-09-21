@@ -34,6 +34,26 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * 工作流定义更新监听事件
+ *
+ * 当工作流定义被修改时触发的事件，包含更新后的完整信息。
+ * 用于跟踪工作流定义的变更历史和触发相关的同步操作。
+ *
+ * 触发时机：
+ * - 修改工作流定义内容
+ * - 添加或删除任务节点
+ * - 更新任务间依赖关系
+ * - 修改工作流配置参数
+ * - 上线或下线工作流
+ *
+ * 使用场景：
+ * - 记录工作流定义变更审计日志
+ * - 同步更新到外部系统
+ * - 通知相关人员工作流已更新
+ * - 触发版本控制操作
+ * - 更新缓存中的工作流信息
+ */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor

@@ -23,7 +23,11 @@ import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
 /**
- * The factory class for creating a dynamic proxy client.
+ * RPC客户端工厂类
+ *
+ * <p>该类用于创建动态代理客户端，通过JDK动态代理机制实现RPC调用。</p>
+ *
+ * <p>使用示例：</p>
  * <pre>
  *     final IService proxyClient = Clients
  *            .withService(IService.class)
@@ -33,23 +37,55 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class Clients {
 
+    /**
+     * JDK动态代理RPC客户端工厂实例
+     * 使用单例模式，全局共享一个Netty客户端
+     */
     private static final JdkDynamicRpcClientProxyFactory jdkDynamicRpcClientProxyFactory =
             new JdkDynamicRpcClientProxyFactory(
                     NettyRemotingClientFactory.buildNettyRemotingClient(
                             new NettyClientConfig()));
 
+    /**
+     * 指定服务接口，开始构建代理客户端
+     *
+     * @param serviceClazz 服务接口类
+     * @param <T> 服务接口类型
+     * @return 代理客户端构建器
+     */
     public static <T> JdkDynamicRpcClientProxyBuilder<T> withService(Class<T> serviceClazz) {
         return new JdkDynamicRpcClientProxyBuilder<>(serviceClazz);
     }
 
+    /**
+     * JDK动态RPC客户端代理构建器
+     *
+     * <p>使用构建器模式，支持链式调用来构建代理客户端。</p>
+     *
+     * @param <T> 服务接口类型
+     */
     public static class JdkDynamicRpcClientProxyBuilder<T> {
 
+        /**
+         * 服务接口类
+         */
         private final Class<T> serviceClazz;
 
+        /**
+         * 构造函数
+         *
+         * @param serviceClazz 服务接口类
+         */
         public JdkDynamicRpcClientProxyBuilder(Class<T> serviceClazz) {
             this.serviceClazz = serviceClazz;
         }
 
+        /**
+         * 指定服务主机地址，创建代理客户端
+         *
+         * @param serviceHost 服务主机地址（格式：host:port）
+         * @return 服务接口的代理实现
+         */
         public T withHost(String serviceHost) {
             return jdkDynamicRpcClientProxyFactory.getProxyClient(serviceHost, serviceClazz);
         }

@@ -24,9 +24,33 @@ import org.apache.dolphinscheduler.task.executor.events.AbstractTaskExecutorLife
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * 任务执行器事件总线
+ *
+ * <p>继承自{@link AbstractDelayEventBus}，专门用于处理任务执行器生命周期事件。
+ * 提供了事件发布的日志记录功能，方便跟踪和调试任务执行过程。
+ *
+ * <p>特性：
+ * <ul>
+ *   <li>支持延迟事件处理</li>
+ *   <li>自动记录事件发布日志</li>
+ *   <li>使用美观的JSON格式输出事件内容</li>
+ * </ul>
+ */
 @Slf4j
 public class TaskExecutorEventBus extends AbstractDelayEventBus<AbstractTaskExecutorLifecycleEvent> {
 
+    /**
+     * 发布任务执行器生命周期事件
+     *
+     * <p>覆写父类方法，增加了日志记录功能。每次发布事件时，
+     * 都会记录事件类型和详细内容，方便问题排查和系统监控。
+     *
+     * <p>注意：使用TaskLogMarkers.excludeInTaskLog()标记，
+     * 避免这些系统日志被包含在任务日志中。
+     *
+     * @param event 要发布的任务执行器生命周期事件
+     */
     public void publish(final AbstractTaskExecutorLifecycleEvent event) {
         super.publish(event);
         log.info(TaskLogMarkers.excludeInTaskLog(), "Publish {}: {}", event.getClass().getSimpleName(),

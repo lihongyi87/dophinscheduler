@@ -74,6 +74,21 @@ import org.springframework.transaction.annotation.Transactional;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.google.common.base.Strings;
 
+/**
+ * Worker组服务实现类
+ *
+ * <p>该类实现了Worker组的管理功能。Worker组用于将Worker节点进行
+ * 逻辑分组，不同的任务可以指定在特定的Worker组上执行。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>创建和管理Worker组</li>
+ *   <li>查询Worker组状态和节点信息</li>
+ *   <li>分配Worker节点到组</li>
+ *   <li>监控Worker节点健康状态</li>
+ *   <li>管理环境与Worker组关联</li>
+ * </ul>
+ */
 @Service
 @Slf4j
 public class WorkerGroupServiceImpl extends BaseServiceImpl implements WorkerGroupService {
@@ -100,13 +115,14 @@ public class WorkerGroupServiceImpl extends BaseServiceImpl implements WorkerGro
     private WorkflowDefinitionMapper workflowDefinitionMapper;
 
     /**
-     * create or update a worker group
+     * 创建或更新Worker组
      *
-     * @param loginUser login user
-     * @param id        worker group id
-     * @param name      worker group name
-     * @param addrList  addr list
-     * @return create or update result code
+     * @param loginUser   登录用户
+     * @param id          Worker组ID，0表示新建
+     * @param name        Worker组名称
+     * @param addrList    Worker地址列表
+     * @param description 描述
+     * @return Worker组对象
      */
     @Override
     public WorkerGroup saveWorkerGroup(User loginUser,
@@ -115,53 +131,69 @@ public class WorkerGroupServiceImpl extends BaseServiceImpl implements WorkerGro
                                        String addrList,
                                        String description) {
         Map<String, Object> result = new HashMap<>();
+
+        // 检查用户是否有创建或更新Worker组的权限
         if (!canOperatorPermissions(loginUser, null, AuthorizationType.WORKER_GROUP, WORKER_GROUP_CREATE)) {
-            // todo: add permission exception
             throw new ServiceException(Status.USER_NO_OPERATION_PERM);
         }
+
+        // 验证Worker组名称不为空
         if (StringUtils.isEmpty(name)) {
             throw new ServiceException(Status.NAME_NULL);
         }
+
+        // 检查Worker地址列表的合法性
         checkWorkerGroupAddrList(addrList);
+
         final Date now = new Date();
         final WorkerGroup workerGroup;
+
         try {
             if (id == 0) {
-                // insert
+                // 创建新的Worker组
                 workerGroup = new WorkerGroup();
                 workerGroup.setCreateTime(now);
                 workerGroup.setName(name);
                 workerGroup.setAddrList(addrList);
                 workerGroup.setUpdateTime(now);
                 workerGroup.setDescription(description);
+                // 插入数据库
                 workerGroupDao.insert(workerGroup);
             } else {
+                // 更新现有Worker组
                 workerGroup = workerGroupDao.queryById(id);
                 if (workerGroup == null) {
                     throw new ServiceException(Status.WORKER_GROUP_NOT_EXIST, id);
                 }
-                // todo: Can we update the worker name?
+
+                // 如果名称发生变化，检查是否有依赖
                 if (!workerGroup.getName().equals(name)) {
                     checkWorkerGroupDependencies(workerGroup, result);
                 }
+
+                // 更新Worker组信息
                 workerGroup.setName(name);
                 workerGroup.setAddrList(addrList);
                 workerGroup.setUpdateTime(now);
                 workerGroup.setDescription(description);
                 workerGroupDao.updateById(workerGroup);
-                log.info("Update worker group: {} success .", workerGroup);
+                log.info("更新Worker组成功: {}", workerGroup);
             }
+
+            // 广播通知Master节点Worker组发生变化
             boardCastToMasterThatWorkerGroupChanged();
             return workerGroup;
         } catch (DuplicateKeyException duplicateKeyException) {
+            // 处理Worker组名称重复的情况
             throw new ServiceException(Status.NAME_EXIST, name);
         }
     }
 
     /**
-     * check if the worker group has any dependent tasks,schedulers or environments.
+     * 检查Worker组是否有依赖的任务、调度或环境
      *
-     * @param workerGroup worker group
+     * @param workerGroup Worker组对象
+     * @param result      结果集合
      * @return boolean
      */
     private boolean checkWorkerGroupDependencies(WorkerGroup workerGroup, Map<String, Object> result) {

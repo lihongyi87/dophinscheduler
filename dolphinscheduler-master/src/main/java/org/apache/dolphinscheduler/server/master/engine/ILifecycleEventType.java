@@ -17,5 +17,12 @@
 
 package org.apache.dolphinscheduler.server.master.engine;
 
+/**
+ * 生命周期事件类型接口
+ * 标记接口，用于标识不同类型的生命周期事件
+ * 具体的事件类型枚举类需要实现此接口
+ */
 public interface ILifecycleEventType {
+    // ==========标记接口，无需实现任何方法==========
+    // 仅用于类型标识和多态性支持
 }

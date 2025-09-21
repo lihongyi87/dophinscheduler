@@ -34,131 +34,192 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * 工作流定义创建监听事件
+ *
+ * 当新的工作流定义被创建时触发的事件，包含工作流定义的完整信息。
+ * 这个事件对于审计、权限管理和工作流版本控制非常重要。
+ *
+ * 触发时机：
+ * - 用户创建新的工作流定义
+ * - 通过API创建工作流定义
+ * - 导入工作流定义
+ * - 复制现有工作流定义
+ *
+ * 使用场景：
+ * - 记录工作流定义创建审计日志
+ * - 同步工作流定义到外部系统
+ * - 触发工作流定义审批流程
+ * - 更新工作流定义统计信息
+ * - 初始化工作流相关资源
+ *
+ * 事件内容：
+ * - 工作流基本信息：ID、代码、名称、版本、描述
+ * - 项目信息：项目代码、项目名称
+ * - 用户信息：创建者、修改者
+ * - 配置信息：全局参数、超时设置、告警组
+ * - 任务信息：任务定义、任务关系
+ * - 状态信息：发布状态、调度状态
+ *
+ * 类比：就像工厂创建新的生产流程图，需要记录流程名称、
+ *      创建人、创建时间、各个工序步骤等完整信息。
+ */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 public class ProcessDefinitionCreatedListenerEvent implements AbstractListenerEvent {
 
     /**
-     * id
+     * 工作流定义ID
+     * 数据库中的主键
      */
     private Integer id;
 
     /**
-     * code
+     * 工作流定义代码
+     * 工作流定义的唯一标识符
      */
     private long code;
 
     /**
-     * name
+     * 工作流定义名称
+     * 用户自定义的工作流名称
      */
     private String name;
 
     /**
-     * version
+     * 工作流版本
+     * 用于版本控制和回滚
      */
     private int version;
 
     /**
-     * release state : online/offline
+     * 发布状态
+     * 上线(ONLINE)/下线(OFFLINE)
      */
     private ReleaseState releaseState;
 
     /**
-     * project code
+     * 项目代码
+     * 工作流所属项目的唯一标识符
      */
     private long projectCode;
 
     /**
-     * description
+     * 工作流描述
+     * 详细说明工作流的用途和功能
      */
     private String description;
 
     /**
-     * user defined parameters
+     * 全局参数
+     * JSON格式的全局参数字符串
      */
     private String globalParams;
 
     /**
-     * user defined parameter list
+     * 全局参数列表
+     * 解析后的全局参数对象列表
      */
     private List<Property> globalParamList;
 
     /**
-     * user define parameter map
+     * 全局参数映射
+     * 键值对形式的全局参数
      */
     private Map<String, String> globalParamMap;
 
     /**
-     * create time
+     * 创建时间
+     * 工作流定义的创建时间戳
      */
     private Date createTime;
 
     /**
-     * update time
+     * 更新时间
+     * 工作流定义的最后更新时间
      */
     private Date updateTime;
 
     /**
-     * process is valid: yes/no
+     * 有效标记
+     * 标识工作流是否有效
      */
     private Flag flag;
 
     /**
-     * process user id
+     * 创建用户ID
+     * 创建该工作流的用户ID
      */
     private int userId;
 
     /**
-     * create user name
+     * 创建用户名
+     * 创建该工作流的用户名称
      */
     private String userName;
 
     /**
-     * project name
+     * 项目名称
+     * 工作流所属项目的名称
      */
     private String projectName;
 
     /**
-     * locations array for web
+     * 位置信息
+     * Web界面中任务节点的位置坐标
      */
     private String locations;
 
     /**
-     * schedule release state : online/offline
+     * 调度发布状态
+     * 调度任务的上线/下线状态
      */
     private ReleaseState scheduleReleaseState;
 
     /**
-     * process warning time out. unit: minute
+     * 超时时间
+     * 工作流执行超时阈值，单位：分钟
      */
     private int timeout;
 
     /**
-     * modify user name
+     * 修改人
+     * 最后修改该工作流的用户名
      */
     private String modifyBy;
 
     /**
-     * warningGroupId
+     * 告警组ID
+     * 工作流失败时的告警组
      */
     private Integer warningGroupId;
 
     /**
-     * execution type
+     * 执行类型
+     * 串行/并行执行策略
      */
     private WorkflowExecutionTypeEnum executionType;
 
     /**
-     * task definitions
+     * 任务定义日志
+     * 包含所有任务定义的详细信息
      */
     List<TaskDefinitionLog> taskDefinitionLogs;
 
     /**
-     *
+     * 任务关系列表
+     * 描述任务之间的依赖和执行顺序
      */
     List<WorkflowTaskRelationLog> taskRelationList;
 
+    /**
+     * 构造函数
+     *
+     * 从工作流定义对象创建事件，复制所有必要的属性。
+     *
+     * @param workflowDefinition 工作流定义对象
+     */
     public ProcessDefinitionCreatedListenerEvent(WorkflowDefinition workflowDefinition) {
         this.setId(workflowDefinition.getId());
         this.setCode(workflowDefinition.getCode());
@@ -183,11 +244,24 @@ public class ProcessDefinitionCreatedListenerEvent implements AbstractListenerEv
         this.setWarningGroupId(workflowDefinition.getWarningGroupId());
         this.setExecutionType(workflowDefinition.getExecutionType());
     }
+    /**
+     * 获取事件类型
+     *
+     * @return 返回PROCESS_DEFINITION_CREATED类型，表示工作流定义创建事件
+     */
     @Override
     public ListenerEventType getEventType() {
         return ListenerEventType.PROCESS_DEFINITION_CREATED;
     }
 
+    /**
+     * 获取事件标题
+     *
+     * 生成描述性的事件标题，包含工作流定义名称。
+     * 格式："process definition created:[工作流名称]"
+     *
+     * @return 事件标题字符串
+     */
     @Override
     public String getTitle() {
         return String.format("process definition created:%s", this.name);

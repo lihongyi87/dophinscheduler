@@ -59,7 +59,16 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * dependent item execute
+ * 依赖任务执行器
+ *
+ * 该类负责处理任务依赖关系的检查和执行逻辑，主要用于判断依赖的工作流或任务是否满足执行条件。
+ * 支持多种依赖类型：
+ * 1. 依赖整个工作流 (depend_workflow)
+ * 2. 依赖工作流中所有任务 (depend_all)
+ * 3. 依赖特定任务 (depend_task)
+ *
+ * @author DolphinScheduler
+ * @since 3.2.0
  */
 @Slf4j
 public class DependentExecute {
@@ -69,12 +78,14 @@ public class DependentExecute {
     private final TaskInstanceDao taskInstanceDao = SpringApplicationContext.getBean(TaskInstanceDao.class);
 
     /**
-     * depend item list
+     * 依赖项列表
+     * 包含需要检查的所有依赖条件
      */
     private List<DependentItem> dependItemList;
 
     /**
-     * dependent relation
+     * 依赖关系类型
+     * 定义多个依赖项之间的逻辑关系（AND或OR）
      */
     private DependentRelation relation;
 
@@ -83,24 +94,28 @@ public class DependentExecute {
     private TaskInstance taskInstance;
 
     /**
-     * depend result map
+     * 依赖结果映射
+     * 存储每个依赖项的检查结果，键为依赖项标识，值为检查结果
      */
     @Getter
     private Map<String, DependResult> dependResultMap = new HashMap<>();
 
     /**
-     * process service
+     * 流程服务
+     * 提供工作流相关的数据访问和业务逻辑
      */
     private final ProcessService processService = SpringApplicationContext.getBean(ProcessService.class);
 
     /**
-     * task definition log dao
+     * 任务定义日志数据访问对象
+     * 用于查询任务定义的历史版本信息
      */
     private final TaskDefinitionLogDao taskDefinitionLogDao =
             SpringApplicationContext.getBean(TaskDefinitionLogDao.class);
 
     /**
-     * task definition dao
+     * 任务定义数据访问对象
+     * 用于查询任务定义的基本信息
      */
     private final TaskDefinitionDao taskDefinitionDao = SpringApplicationContext.getBean(TaskDefinitionDao.class);
 
@@ -115,10 +130,12 @@ public class DependentExecute {
     private Map<String, Long> dependItemVarPoolEndTimeMap = new HashMap<>();
 
     /**
-     * constructor
+     * 构造函数
      *
-     * @param itemList item list
-     * @param relation relation
+     * @param itemList 依赖项列表，包含所有需要检查的依赖条件
+     * @param relation 依赖关系类型，定义多个依赖项之间的逻辑关系
+     * @param workflowInstance 当前工作流实例
+     * @param taskInstance 当前任务实例
      */
     public DependentExecute(List<DependentItem> itemList, DependentRelation relation, WorkflowInstance workflowInstance,
                             TaskInstance taskInstance) {
@@ -129,11 +146,11 @@ public class DependentExecute {
     }
 
     /**
-     * get dependent item for one dependent item
+     * 获取单个依赖项的检查结果
      *
-     * @param dependentItem dependent item
-     * @param currentTime   current time
-     * @return DependResult
+     * @param dependentItem 依赖项，包含依赖的目标工作流和任务信息
+     * @param currentTime 当前时间，用于计算时间区间
+     * @return 依赖检查结果（SUCCESS/FAILED/WAITING）
      */
     private DependResult getDependentResultForItem(DependentItem dependentItem, Date currentTime) {
         List<DateInterval> dateIntervals =
@@ -142,11 +159,14 @@ public class DependentExecute {
     }
 
     /**
-     * calculate dependent result for one dependent item.
+     * 计算单个依赖项的结果
      *
-     * @param dependentItem dependent item
-     * @param dateIntervals date intervals
-     * @return dateIntervals
+     * 根据指定的时间区间，查找并检查相应的工作流实例和任务实例状态。
+     * 对于多个时间区间，只有当所有区间的依赖都满足时才返回成功。
+     *
+     * @param dependentItem 依赖项，包含目标工作流和任务的代码
+     * @param dateIntervals 日期时间区间列表，用于查找匹配的工作流实例
+     * @return 依赖结果（SUCCESS/FAILED/WAITING）
      */
     private DependResult calculateResultForTasks(DependentItem dependentItem,
                                                  List<DateInterval> dateIntervals) {
@@ -175,9 +195,13 @@ public class DependentExecute {
     }
 
     /**
-     * depend type = depend_work_flow
+     * 依赖类型为“依赖整个工作流”的结果检查
      *
-     * @return
+     * 当依赖类型为 DEPENDENT_WORKFLOW_CODE 时，检查目标工作流的整体执行状态。
+     * 只有当工作流执行完成且成功时，才返回成功结果。
+     *
+     * @param workflowInstance 目标工作流实例
+     * @return 依赖检查结果（SUCCESS/FAILED/WAITING）
      */
     private DependResult dependResultByWorkflowInstance(WorkflowInstance workflowInstance) {
         if (!workflowInstance.getState().isFinished()) {
@@ -194,9 +218,14 @@ public class DependentExecute {
     }
 
     /**
-     * depend type = depend_all
+     * 依赖类型为“依赖所有任务”的结果检查
      *
-     * @return
+     * 当依赖类型为 DEPENDENT_ALL_TASK_CODE 时，检查目标工作流中所有任务的执行状态。
+     * 只有当工作流中的所有任务都执行成功时，才返回成功结果。
+     * 注意：流式任务（STREAM类型）不会被纳入检查范围。
+     *
+     * @param workflowInstance 目标工作流实例
+     * @return 依赖检查结果（SUCCESS/FAILED/WAITING）
      */
     private DependResult dependResultByAllTaskOfWorkflowInstance(WorkflowInstance workflowInstance) {
         if (!workflowInstance.getState().isFinished()) {
@@ -245,11 +274,18 @@ public class DependentExecute {
     }
 
     /**
-     * depend type = depend_task
+     * 依赖类型为“依赖特定任务”的结果检查
      *
-     * @param workflowInstance last workflow instance in the date interval
-     * @param depTaskCode the dependent task code
-     * @return depend result
+     * 当依赖类型为特定任务代码时，检查目标工作流中指定任务的执行状态。
+     * 支持以下特殊情况的处理：
+     * 1. 任务定义不存在：返回失败
+     * 2. 任务被禁用（Flag.NO）：返回成功
+     * 3. 流式任务：返回成功
+     * 4. 任务实例不存在：根据工作流状态决定结果
+     *
+     * @param workflowInstance 日期区间内的最后一个工作流实例
+     * @param depTaskCode 依赖的任务代码
+     * @return 依赖检查结果（SUCCESS/FAILED/WAITING）
      */
     private DependResult dependResultBySingleTaskInstance(WorkflowInstance workflowInstance, long depTaskCode) {
         TaskInstance taskInstance =
@@ -293,10 +329,13 @@ public class DependentExecute {
     }
 
     /**
-     * add varPool to dependItemVarPoolMap
+     * 将变量池添加到依赖项变量池映射中
      *
-     * @param varPoolStr
-     * @param endTime
+     * 解析传入的变量池字符串，提取其中的输出变量（Direct.OUT），
+     * 并将其添加到依赖项的变量池中，用于后续的参数传递。
+     *
+     * @param varPoolStr 变量池的JSON字符串表示
+     * @param endTime 任务结束时间，用于记录变量的生成时间
      */
     private void addItemVarPool(String varPoolStr, Long endTime) {
         List<Property> varPool = new ArrayList<>(JSONUtils.toList(varPoolStr, Property.class));
@@ -311,15 +350,19 @@ public class DependentExecute {
     }
 
     /**
-     * find the last one workflow instance that:
-     * 1. running workflow instance in the date interval
-     * 2. manual run and finish between the interval
-     * 3. schedule run and schedule time between the interval
+     * 查找符合条件的最后一个工作流实例
      *
-     * @param definitionCode definition code
-     * @param taskCode task code
-     * @param dateInterval   date interval
-     * @return workflowInstance
+     * 按照以下优先级查找工作流实例：
+     * 1. 日期区间内正在运行的工作流实例（最高优先级）
+     * 2. 手动运行且在区间内完成的工作流实例
+     * 3. 定时运行且调度时间在区间内的工作流实例
+     *
+     * 如果同时存在手动和定时工作流实例，则选择ID较大的（较新的）实例。
+     *
+     * @param definitionCode 工作流定义代码
+     * @param taskCode 任务代码，用于过滤相关的工作流实例
+     * @param dateInterval 日期时间区间，定义查找范围
+     * @return 符合条件的工作流实例，没有找到则返回null
      */
     private WorkflowInstance findDependentWorkflowCandidate(Long definitionCode, Long taskCode,
                                                             DateInterval dateInterval) {
@@ -348,11 +391,17 @@ public class DependentExecute {
     }
 
     /**
-     * get dependent result by task/workflow instance
+     * 根据任务/工作流实例获取依赖结果
      *
-     * @param workflowInstance workflow instance
-     * @param taskInstance task instance
-     * @return DependResult
+     * 检查任务实例的执行状态，并根据以下规则返回结果：
+     * 1. 任务未完成：返回WAITING
+     * 2. 任务成功：返回SUCCESS
+     * 3. 任务失败但在重试范围内且工作流还在运行：返回WAITING
+     * 4. 其他情况：返回FAILED
+     *
+     * @param workflowInstance 工作流实例，用于检查工作流状态
+     * @param taskInstance 任务实例，用于检查任务状态和重试信息
+     * @return 依赖检查结果（SUCCESS/FAILED/WAITING）
      */
     private DependResult getDependResultOfTask(WorkflowInstance workflowInstance, TaskInstance taskInstance) {
 
@@ -377,10 +426,16 @@ public class DependentExecute {
     }
 
     /**
-     * judge depend item finished
+     * 判断依赖项是否已完成检查
      *
-     * @param currentTime current time
-     * @return boolean
+     * 根据当前时间和失败策略来判断依赖检查是否完成。
+     * 对于失败策略为DEPENDENT_FAILURE_WAITING的情况，
+     * 会等待指定时间后才认为检查完成。
+     *
+     * @param currentTime 当前时间，用于计算等待时间
+     * @param failurePolicy 失败处理策略，决定失败时的行为
+     * @param failureWaitingTime 失败时的等待时间（分钟）
+     * @return true表示依赖检查已完成，false表示还需要继续等待
      */
     public boolean finish(Date currentTime, DependentParameters.DependentFailurePolicyEnum failurePolicy,
                           Integer failureWaitingTime) {
@@ -396,10 +451,16 @@ public class DependentExecute {
     }
 
     /**
-     * get model depend result
+     * 获取模型依赖结果
      *
-     * @param currentTime current time
-     * @return DependResult
+     * 遵循以下流程计算最终的依赖结果：
+     * 1. 逐个检查每个依赖项的状态
+     * 2. 对于自依赖且是首次运行的情况，默认为成功
+     * 3. 对于需要参数传递的依赖项，收集其输出变量
+     * 4. 根据依赖关系（AND/OR）计算最终结果
+     *
+     * @param currentTime 当前时间，用于依赖检查
+     * @return 最终的依赖结果（SUCCESS/FAILED/WAITING）
      */
     public DependResult getModelDependResult(Date currentTime) {
 
@@ -431,11 +492,14 @@ public class DependentExecute {
     }
 
     /**
-     * get dependent item result
+     * 获取依赖项结果
      *
-     * @param item        item
-     * @param currentTime current time
-     * @return DependResult
+     * 先从缓存中查找已计算的结果，如果不存在则重新计算。
+     * 这种缓存机制可以避免重复计算相同的依赖项。
+     *
+     * @param item 依赖项对象，包含依赖的目标信息
+     * @param currentTime 当前时间，用于依赖检查
+     * @return 依赖检查结果（SUCCESS/FAILED/WAITING）
      */
     private DependResult getDependResultForItem(DependentItem item, Date currentTime) {
         String key = item.getKey();
@@ -446,9 +510,15 @@ public class DependentExecute {
     }
 
     /**
-     * check for self-dependent
-     * @param dependentItem
-     * @return
+     * 检查是否为自依赖
+     *
+     * 判断依赖项是否指向当前正在执行的工作流或任务。
+     * 自依赖的判断条件：
+     * 1. 依赖的工作流定义代码与当前工作流相同
+     * 2. 依赖所有任务（DEPENDENT_ALL_TASK_CODE）或依赖当前任务
+     *
+     * @param dependentItem 依赖项对象
+     * @return true表示是自依赖，false表示不是自依赖
      */
     public boolean isSelfDependent(DependentItem dependentItem) {
         if (workflowInstance.getWorkflowDefinitionCode().equals(dependentItem.getDefinitionCode())) {
@@ -463,8 +533,15 @@ public class DependentExecute {
     }
 
     /**
-     * check for first-running
-     * query the first workflowInstance by scheduleTime(or startTime if scheduleTime is null)
+     * 检查是否为首次运行
+     *
+     * 通过查询指定工作流定义的第一个工作流实例来判断当前实例是否为首次运行。
+     * 查询优先级：
+     * 1. 先按调度时间（scheduleTime）查询最早的实例
+     * 2. 如果没有调度时间，则按开始时间（startTime）查询
+     *
+     * @param dependentItem 依赖项对象，包含目标工作流定义代码
+     * @return true表示当前实例是首次运行，false表示不是首次运行
      */
     public boolean isFirstWorkflowInstance(DependentItem dependentItem) {
         WorkflowInstance firstWorkflowInstance =

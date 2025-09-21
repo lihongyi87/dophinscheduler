@@ -53,7 +53,19 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 /**
- * queue service impl
+ * 队列服务实现类
+ *
+ * <p>该类实现了队列的管理功能。队列是YARN资源调度的基本单位，
+ * 不同的队列可以配置不同的资源配额和调度策略。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>创建和管理队列</li>
+ *   <li>队列与租户关联</li>
+ *   <li>队列与用户关联</li>
+ *   <li>队列资源配额管理</li>
+ *   <li>队列使用状态检查</li>
+ * </ul>
  */
 @Service
 @Slf4j
@@ -69,18 +81,25 @@ public class QueueServiceImpl extends BaseServiceImpl implements QueueService {
     private TenantMapper tenantMapper;
 
     /**
-     * Check the queue new object valid or not
+     * 检查新建队列对象的有效性
      *
-     * @param queue The queue object want to create
+     * @param queue 要创建的队列对象
      */
     private void validQueue(Queue queue) throws ServiceException {
+        // 检查队列值是否为空
         if (StringUtils.isEmpty(queue.getQueue())) {
             throw new ServiceException(Status.REQUEST_PARAMS_NOT_VALID_ERROR, Constants.QUEUE);
-        } else if (StringUtils.isEmpty(queue.getQueueName())) {
+        }
+        // 检查队列名称是否为空
+        else if (StringUtils.isEmpty(queue.getQueueName())) {
             throw new ServiceException(Status.REQUEST_PARAMS_NOT_VALID_ERROR, Constants.QUEUE_NAME);
-        } else if (checkQueueExist(queue.getQueue())) {
+        }
+        // 检查队列值是否已存在
+        else if (checkQueueExist(queue.getQueue())) {
             throw new ServiceException(Status.QUEUE_VALUE_EXIST, queue.getQueue());
-        } else if (checkQueueNameExist(queue.getQueueName())) {
+        }
+        // 检查队列名称是否已存在
+        else if (checkQueueNameExist(queue.getQueueName())) {
             throw new ServiceException(Status.QUEUE_NAME_EXIST, queue.getQueueName());
         }
     }
@@ -114,19 +133,22 @@ public class QueueServiceImpl extends BaseServiceImpl implements QueueService {
     }
 
     /**
-     * query queue list
+     * 查询队列列表
      *
-     * @param loginUser login user
-     * @return queue list
+     * @param loginUser 登录用户
+     * @return 队列列表
      */
     @Override
     public List<Queue> queryList(User loginUser) {
+        // 获取用户有权限访问的队列ID集合
         Set<Integer> ids = resourcePermissionCheckService.userOwnedResourceIdsAcquisition(AuthorizationType.QUEUE,
                 loginUser.getId(), log);
+        // 如果是普通用户，需要添加默认队列ID
         if (loginUser.getUserType().equals(UserType.GENERAL_USER)) {
             ids = ids.isEmpty() ? new HashSet<>() : ids;
             ids.add(Constants.DEFAULT_QUEUE_ID);
         }
+        // 根据ID集合查询队列
         return queueMapper.selectBatchIds(ids);
     }
 
@@ -156,91 +178,104 @@ public class QueueServiceImpl extends BaseServiceImpl implements QueueService {
     }
 
     /**
-     * create queue
+     * 创建队列
      *
-     * @param loginUser login user
-     * @param queue     queue
-     * @param queueName queue name
-     * @return create result
+     * @param loginUser 登录用户
+     * @param queue     队列值
+     * @param queueName 队列名称
+     * @return 创建的队列对象
      */
     @Override
     public Queue createQueue(User loginUser, String queue, String queueName) {
+        // 检查用户是否有创建队列的权限
         if (!canOperatorPermissions(loginUser, null, AuthorizationType.QUEUE, YARN_QUEUE_CREATE)) {
             throw new ServiceException(Status.USER_NO_OPERATION_PERM);
         }
 
+        // 创建队列对象
         Queue queueObj = new Queue(queueName, queue);
+        // 验证队列有效性
         validQueue(queueObj);
+        // 插入队列到数据库
         queueMapper.insert(queueObj);
 
         return queueObj;
     }
 
     /**
-     * update queue
+     * 更新队列
      *
-     * @param loginUser login user
-     * @param queue     queue
-     * @param id        queue id
-     * @param queueName queue name
-     * @return update result code
+     * @param loginUser 登录用户
+     * @param queue     队列值
+     * @param id        队列ID
+     * @param queueName 队列名称
+     * @return 更新后的队列对象
      */
     @Override
     public Queue updateQueue(User loginUser, int id, String queue, String queueName) {
+        // 检查用户是否有更新队列的权限
         if (!canOperatorPermissions(loginUser, new Object[]{id}, AuthorizationType.QUEUE, YARN_QUEUE_UPDATE)) {
             throw new ServiceException(Status.USER_NO_OPERATION_PERM);
         }
 
+        // 创建更新的队列对象
         Queue updateQueue = new Queue(id, queueName, queue);
         updateQueue.setCreateTime(null);
+        // 查询现有队列
         Queue existsQueue = queueMapper.selectById(id);
+        // 验证更新的有效性
         updateQueueValid(existsQueue, updateQueue);
 
-        // check old queue using by any user
+        // 检查旧队列是否被任何用户使用
         if (checkIfQueueIsInUsing(existsQueue.getQueueName(), updateQueue.getQueueName())) {
-            // update user related old queue
+            // 更新与旧队列关联的用户
             Integer relatedUserNums =
                     userMapper.updateUserQueue(existsQueue.getQueueName(), updateQueue.getQueueName());
             log.info("Old queue have related {} users, exec update user success.", relatedUserNums);
         }
 
+        // 更新队列信息
         queueMapper.updateById(updateQueue);
         return updateQueue;
     }
 
     /**
-     * delete queue
+     * 删除队列
      *
-     * @param loginUser login user
-     * @param id        queue id
-     * @return delete result code
-     * @throws Exception exception
+     * @param loginUser 登录用户
+     * @param id        队列ID
+     * @throws Exception 异常
      */
     @Override
     public void deleteQueueById(User loginUser, int id) throws Exception {
 
+        // 检查用户是否有删除权限
         if (!canOperatorPermissions(loginUser, null, AuthorizationType.TENANT, TENANT_DELETE)) {
             throw new ServiceException(Status.USER_NO_OPERATION_PERM);
         }
 
+        // 查询队列是否存在
         Queue queue = queueMapper.selectById(id);
         if (Objects.isNull(queue)) {
             log.error("Queue does not exist");
             throw new ServiceException(Status.QUEUE_NOT_EXIST);
         }
 
+        // 检查是否有租户使用该队列
         List<Tenant> tenantList = tenantMapper.queryTenantListByQueueId(queue.getId());
         if (CollectionUtils.isNotEmpty(tenantList)) {
             log.warn("Delete queue failed, because there are {} tenants using it.", tenantList.size());
             throw new ServiceException(Status.DELETE_TENANT_BY_ID_FAIL_TENANTS, tenantList.size());
         }
 
+        // 检查是否有用户使用该队列
         List<User> userList = userMapper.queryUserListByQueue(queue.getQueueName());
         if (CollectionUtils.isNotEmpty(userList)) {
             log.warn("Delete queue failed, because there are {} users using it.", userList.size());
             throw new ServiceException(Status.DELETE_QUEUE_BY_ID_FAIL_USERS, userList.size());
         }
 
+        // 执行删除操作
         int delete = queueMapper.deleteById(id);
         if (delete <= 0) {
             throw new ServiceException(Status.DELETE_QUEUE_BY_ID_ERROR);
