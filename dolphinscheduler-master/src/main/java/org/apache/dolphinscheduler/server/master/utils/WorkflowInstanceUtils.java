@@ -33,9 +33,39 @@ import lombok.experimental.UtilityClass;
 
 import com.google.common.base.Strings;
 
+/**
+ * 工作流实例工具类
+ *
+ * 提供工作流实例和任务实例的日志格式化和信息显示工具方法。
+ * 主要用于生成统一格式的详细信息日志，方便调试和问题排查。
+ * 支持的功能包括：
+ * 1. 工作流实例的详细信息日志输出
+ * 2. 任务实例的详细信息日志输出
+ * 3. 格式化的表格式显示，提高可读性
+ *
+ * @author DolphinScheduler
+ * @since 3.2.0
+ */
 @UtilityClass
 public class WorkflowInstanceUtils {
 
+    /**
+     * 记录工作流实例的详细信息
+     *
+     * 生成一个格式化的工作流实例详细信息日志，包含所有关键的工作流属性和状态。
+     * 这个日志对于调试工作流执行问题和系统监控非常有用。
+     *
+     * 输出信息包括：
+     * - 工作流实例名称和基本信息
+     * - 命令类型和执行状态
+     * - 起始节点和任务总数
+     * - 执行主机和环境信息
+     * - 时间信息（调度、开始、结束时间等）
+     * - 事件总线状态等
+     *
+     * @param workflowExecutionRunnable 工作流执行可运行对象，包含工作流的所有执行信息
+     * @return 格式化的工作流详细信息字符串，包含表格边框和排版格式
+     */
     public static String logWorkflowInstanceInDetails(IWorkflowExecutionRunnable workflowExecutionRunnable) {
         final IWorkflowExecuteContext workflowExecuteContext = workflowExecutionRunnable.getWorkflowExecuteContext();
         final IWorkflowExecutionGraph workflowExecutionGraph = workflowExecuteContext.getWorkflowExecutionGraph();
@@ -80,6 +110,22 @@ public class WorkflowInstanceUtils {
         return logBuilder.toString();
     }
 
+    /**
+     * 记录任务实例的详细信息
+     *
+     * 生成一个格式化的任务实例详细信息日志，包含任务的所有关键属性和执行信息。
+     * 这个日志对于调试任务执行问题和性能分析非常有用。
+     *
+     * 输出信息包括：
+     * - 任务名称和所属工作流
+     * - 任务执行类型和状态
+     * - 执行主机和任务类型
+     * - 优先级和租户信息
+     * - 时间信息（提交、开始、结束时间等）
+     *
+     * @param taskInstance 任务实例对象，包含任务的所有执行信息
+     * @return 格式化的任务详细信息字符串，包含表格边框和排版格式
+     */
     public String logTaskInstanceInDetail(TaskInstance taskInstance) {
         final StringBuilder logBuilder = new StringBuilder();
         // set the length for '*'

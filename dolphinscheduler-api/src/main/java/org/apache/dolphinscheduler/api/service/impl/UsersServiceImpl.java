@@ -76,7 +76,20 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 /**
- * users service impl
+ * 用户服务实现类
+ *
+ * <p>该类实现了用户的管理功能。用户是系统的操作主体，
+ * 拥有不同的角色和权限，可以执行不同的操作。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>用户创建和管理</li>
+ *   <li>用户认证和授权</li>
+ *   <li>用户与租户关联</li>
+ *   <li>用户与项目权限管理</li>
+ *   <li>用户与资源权限管理</li>
+ *   <li>支持LDAP、OAuth等多种认证方式</li>
+ * </ul>
  */
 @Service
 @Slf4j
@@ -116,17 +129,18 @@ public class UsersServiceImpl extends BaseServiceImpl implements UsersService {
     private SessionService sessionService;
 
     /**
-     * create user, only system admin have permission
+     * 创建用户，仅系统管理员有权限
      *
-     * @param loginUser    login user
-     * @param userName     user name
-     * @param userPassword user password
-     * @param email        email
-     * @param tenantId     tenant id
-     * @param phone        phone
-     * @param queue        queue
-     * @return create result code
-     * @throws Exception exception
+     * @param loginUser    登录用户
+     * @param userName     用户名
+     * @param userPassword 用户密码
+     * @param email        邮箱
+     * @param tenantId     租户ID
+     * @param phone        电话
+     * @param queue        队列
+     * @param state        状态
+     * @return 创建结果
+     * @throws Exception 异常
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -140,29 +154,34 @@ public class UsersServiceImpl extends BaseServiceImpl implements UsersService {
                                           int state) throws Exception {
         Map<String, Object> result = new HashMap<>();
 
-        // check all user params
+        // 检查所有用户参数的合法性
         String msg = this.checkUserParams(userName, userPassword, email, phone);
+        // 检查资源权限服务是否被禁用
         if (resourcePermissionCheckService.functionDisabled()) {
             putMsg(result, Status.FUNCTION_DISABLED, msg);
             return result;
         }
 
+        // 检查操作用户是否为管理员
         if (!isAdmin(loginUser)) {
             putMsg(result, Status.USER_NO_OPERATION_PERM);
             return result;
         }
 
+        // 检查参数校验结果
         if (!StringUtils.isEmpty(msg)) {
             putMsg(result, Status.REQUEST_PARAMS_NOT_VALID_ERROR, msg);
             return result;
         }
 
+        // 检查租户是否存在
         if (!checkTenantExists(tenantId)) {
             log.warn("Tenant does not exist, tenantId:{}.", tenantId);
             putMsg(result, Status.TENANT_NOT_EXIST);
             return result;
         }
 
+        // 创建用户
         User user = createUser(userName, userPassword, email, tenantId, phone, queue, state);
 
         log.info("User is created and id is {}.", user.getId());
@@ -171,6 +190,9 @@ public class UsersServiceImpl extends BaseServiceImpl implements UsersService {
         return result;
     }
 
+    /**
+     * 创建用户内部方法
+     */
     @Override
     @Transactional
     public User createUser(String userName,
@@ -180,49 +202,70 @@ public class UsersServiceImpl extends BaseServiceImpl implements UsersService {
                            String phone,
                            String queue,
                            int state) {
+        // 创建用户对象
         User user = new User();
         Date now = new Date();
 
+        // 设置用户名
         user.setUserName(userName);
+        // 对密码进行MD5加密
         user.setUserPassword(EncryptionUtils.getMd5(userPassword));
+        // 设置邮箱
         user.setEmail(email);
+        // 设置租户ID
         user.setTenantId(tenantId);
+        // 设置电话
         user.setPhone(phone);
+        // 设置用户状态
         user.setState(state);
-        // create general users, administrator users are currently built-in
+        // 创建普通用户，管理员用户目前是内置的
         user.setUserType(UserType.GENERAL_USER);
+        // 设置创建和更新时间
         user.setCreateTime(now);
         user.setUpdateTime(now);
+        // 处理队列参数
         if (StringUtils.isEmpty(queue)) {
             queue = "";
         }
         user.setQueue(queue);
 
-        // save user
+        // 保存用户到数据库
         userMapper.insert(user);
         return user;
     }
 
     /***
-     * create User for ldap、Casdoor SSO and OAuth2.0 login
+     * 为LDAP、Casdoor SSO和OAuth2.0登录创建用户
+     *
+     * @param userType 用户类型
+     * @param userId   用户ID
+     * @param email    邮箱
+     * @return 创建的用户对象
      */
     @Override
     @Transactional
     public User createUser(UserType userType, String userId, String email) {
+        // 创建用户对象
         User user = new User();
         Date now = new Date();
 
+        // 设置用户名
         user.setUserName(userId);
+        // 设置邮箱
         user.setEmail(email);
-        // create general users, administrator users are currently built-in
+        // 创建普通用户，管理员用户目前是内置的
         user.setUserType(userType);
+        // 设置创建和更新时间
         user.setCreateTime(now);
         user.setUpdateTime(now);
+        // 设置默认租户ID为-1（未分配租户）
         user.setTenantId(-1);
+        // 设置空队列
         user.setQueue("");
+        // 设置用户状态为启用
         user.setState(Flag.YES.getCode());
 
-        // save user
+        // 保存用户到数据库
         userMapper.insert(user);
         return user;
     }

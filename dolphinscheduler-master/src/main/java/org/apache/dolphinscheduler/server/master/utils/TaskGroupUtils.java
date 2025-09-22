@@ -19,10 +19,32 @@ package org.apache.dolphinscheduler.server.master.utils;
 
 import org.apache.dolphinscheduler.dao.entity.TaskInstance;
 
+/**
+ * 任务组工具类
+ *
+ * 提供与任务组相关的工具方法，主要用于判断和检查任务实例是否使用了任务组功能。
+ * 任务组是DolphinScheduler中的一个重要特性，用于控制并发执行的任务数量，
+ * 防止资源耗尽和系统过载。
+ *
+ * @author DolphinScheduler
+ * @since 3.2.0
+ */
 public class TaskGroupUtils {
 
     /**
-     * Check if the task instance is using task group
+     * 检查任务实例是否使用了任务组
+     *
+     * 通过检查任务实例的任务组ID来判断是否启用了任务组功能。
+     * 当任务组ID大于0时，表示该任务实例属于某个任务组，
+     * 需要在任务组的并发控制下执行。
+     *
+     * 任务组的作用：
+     * 1. 限制同一组内同时执行的任务数量
+     * 2. 防止资源竞争和系统过载
+     * 3. 实现任务的优先级排队和调度
+     *
+     * @param taskInstance 需要检查的任务实例
+     * @return true表示使用了任务组，false表示未使用任务组
      */
     public static boolean isUsingTaskGroup(final TaskInstance taskInstance) {
         return taskInstance.getTaskGroupId() > 0;

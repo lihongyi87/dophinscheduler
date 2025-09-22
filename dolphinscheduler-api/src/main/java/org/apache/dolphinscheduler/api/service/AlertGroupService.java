@@ -24,75 +24,105 @@ import org.apache.dolphinscheduler.dao.entity.User;
 import java.util.List;
 
 /**
- * alert group service
+ * 告警组服务接口
+ * 提供告警组的增删改查等管理功能
  */
 public interface AlertGroupService {
 
     /**
-     * query alert group list
+     * 查询所有告警组列表
      *
-     * @param loginUser
-     * @return alert group list
+     * @param loginUser 登录用户
+     * @return 告警组列表
      */
     List<AlertGroup> queryAllAlertGroup(User loginUser);
 
     /**
-     * query alert group by id
+     * 根据ID查询告警组
      *
-     * @param loginUser login user
-     * @param id alert group id
-     * @return one alert group
+     * @param loginUser 登录用户
+     * @param id 告警组ID
+     * @return 告警组对象
      */
     AlertGroup queryAlertGroupById(User loginUser, Integer id);
 
     /**
-     * paging query alarm group list
+     * 分页查询告警组列表
+     * 支持按告警组名称模糊搜索
      *
-     * @param loginUser login user
-     * @param searchVal search value
-     * @param pageNo page number
-     * @param pageSize page size
-     * @return alert group list page
+     * @param loginUser 登录用户，需要有告警组查看权限
+     * @param searchVal 搜索关键词，可为空，支持告警组名称模糊匹配
+     * @param pageNo 页码，从1开始
+     * @param pageSize 每页大小，建议10-100
+     * @return 告警组分页数据，包含总数和当前页数据
      */
     PageInfo<AlertGroup> listPaging(User loginUser, String searchVal, Integer pageNo, Integer pageSize);
 
     /**
-     * create alert group
+     * 创建告警组
      *
-     * @param loginUser login user
-     * @param groupName group name
-     * @param desc description
-     * @param alertInstanceIds alertInstanceIds
-     * @return alertGroup
+     * <p>业务逻辑：</p>
+     * <ul>
+     *   <li>验证告警组名称唯一性</li>
+     *   <li>验证告警实例ID有效性</li>
+     *   <li>创建告警组并关联告警实例</li>
+     * </ul>
+     *
+     * @param loginUser 登录用户，需要有告警组创建权限
+     * @param groupName 告警组名称，不能为空且全局唯一
+     * @param desc 告警组描述，可选
+     * @param alertInstanceIds 告警实例ID列表，逗号分隔，关联具体的告警插件实例
+     * @return 创建成功的告警组对象
+     * @throws ServiceException 当告警组名称重复或告警实例ID无效时抛出
      */
     AlertGroup createAlertGroup(User loginUser, String groupName, String desc, String alertInstanceIds);
 
     /**
-     * updateWorkflowInstance alert group
+     * 根据ID更新告警组信息
      *
-     * @param loginUser login user
-     * @param id alert group id
-     * @param groupName group name
-     * @param desc description
-     * @param alertInstanceIds alertInstanceIds
-     * @return update result code
+     * <p>业务逻辑：</p>
+     * <ul>
+     *   <li>验证告警组是否存在</li>
+     *   <li>检查用户权限</li>
+     *   <li>验证新名称唯一性（如果名称发生变化）</li>
+     *   <li>更新告警组基本信息和关联的告警实例</li>
+     * </ul>
+     *
+     * @param loginUser 登录用户，需要有告警组编辑权限
+     * @param id 告警组ID，必须存在
+     * @param groupName 新的告警组名称，不能为空且不能与其他告警组重复
+     * @param desc 新的告警组描述
+     * @param alertInstanceIds 新的告警实例ID列表，逗号分隔
+     * @return 更新后的告警组对象
+     * @throws ServiceException 当告警组不存在、权限不足或名称冲突时抛出
      */
     AlertGroup updateAlertGroupById(User loginUser, int id, String groupName, String desc, String alertInstanceIds);
 
     /**
-     * delete alert group by id
+     * 根据ID删除告警组
      *
-     * @param loginUser login user
-     * @param id alert group id
-     * @return delete result code
+     * <p>业务逻辑：</p>
+     * <ul>
+     *   <li>验证告警组是否存在</li>
+     *   <li>检查是否被工作流定义引用</li>
+     *   <li>检查用户删除权限</li>
+     *   <li>执行物理删除</li>
+     * </ul>
+     *
+     * <p>级联影响：删除前会检查是否有工作流定义在使用此告警组</p>
+     *
+     * @param loginUser 登录用户，需要有告警组删除权限
+     * @param id 告警组ID，必须存在且未被使用
+     * @throws ServiceException 当告警组不存在、被引用或权限不足时抛出
      */
     void deleteAlertGroupById(User loginUser, int id);
 
     /**
-     * verify group name exists
+     * 验证告警组名称是否已存在
+     * 用于创建和更新时的名称唯一性校验
      *
-     * @param groupName group name
-     * @return check result code
+     * @param groupName 待验证的告警组名称，不能为空
+     * @return true表示名称已存在，false表示名称可用
      */
     boolean existGroupName(String groupName);
 }

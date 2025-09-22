@@ -44,6 +44,29 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/**
+ * 工作流告警管理器
+ *
+ * 负责管理工作流和任务执行过程中的告警信息生成和发送。
+ * 根据工作流和任务的执行状态，生成相应的告警内容并发送给指定用户。
+ *
+ * 告警类型：
+ * - 工作流启动告警：工作流开始执行时发送
+ * - 工作流成功告警：工作流成功完成时发送
+ * - 工作流失败告警：工作流执行失败时发送
+ * - 任务失败告警：单个任务执行失败时发送
+ * - 任务超时告警：任务执行超时时发送
+ * - 阻塞告警：工作流被阻塞时发送
+ *
+ * 主要功能：
+ * - 生成告警内容：根据工作流/任务信息生成详细的告警内容
+ * - 确定告警接收人：根据配置确定谁应该接收告警
+ * - 发送告警：将告警信息保存到数据库，等待告警服务处理
+ * - 告警策略：根据告警类型和用户配置决定是否发送
+ *
+ * 类比：就像系统的监控告警中心，监控各种事件，
+ *      当发生异常或重要事件时，及时通知相关负责人。
+ */
 @Component
 @Slf4j
 public class WorkflowAlertManager {
@@ -61,10 +84,13 @@ public class WorkflowAlertManager {
     private ProjectDao projectDao;
 
     /**
-     * convert command type to human-readable name
+     * 转换命令类型为可读名称
      *
-     * @param commandType command type
-     * @return command name
+     * 将命令类型枚举转换为人类可读的中文名称，
+     * 用于告警内容的展示
+     *
+     * @param commandType 命令类型
+     * @return 命令的中文名称
      */
     private String getCommandCnName(CommandType commandType) {
         switch (commandType) {

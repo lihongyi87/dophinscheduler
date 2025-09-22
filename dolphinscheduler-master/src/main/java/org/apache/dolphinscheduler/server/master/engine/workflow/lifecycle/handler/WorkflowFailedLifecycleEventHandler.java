@@ -52,10 +52,10 @@ public class WorkflowFailedLifecycleEventHandler
 
     /**
      * 处理工作流失败事件
-     * 
+     *
      * 当工作流因关键任务失败而失败时，会触发这个方法。
      * 处理器会执行失败处理逻辑，如停止运行任务、更新状态、发送告警等。
-     * 
+     *
      * @param workflowStateAction 工作流状态操作对象
      * @param workflowExecutionRunnable 工作流执行对象
      * @param workflowFailedEvent 工作流失败事件对象
@@ -64,7 +64,55 @@ public class WorkflowFailedLifecycleEventHandler
     public void handle(final IWorkflowStateAction workflowStateAction,
                        final IWorkflowExecutionRunnable workflowExecutionRunnable,
                        final WorkflowFailedLifecycleEvent workflowFailedEvent) {
-        // 委托给对应的状态操作类处理失败事件
+
+        // =========================================================================
+        // 工作流失败事件处理的核心逻辑
+        // =========================================================================
+
+        // 将失败事件委托给当前工作流状态对应的状态操作类进行处理
+        //
+        // 处理流程说明：
+        // 1. 工作流失败的触发条件：
+        //    - 关键路径上的任务执行失败，且没有配置失败重试或重试次数已用完
+        //    - 任务失败策略为"失败即停止"（FAILURE_FAILURE_POLICY）
+        //    - 工作流执行超时（如果配置了超时时间）
+        //    - 系统异常导致工作流无法继续执行
+        //
+        // 2. 失败应急处理：
+        //    - 立即停止所有正在运行的任务（发送KILL信号）
+        //    - 取消所有等待执行的任务（状态设置为NEED_FAULT_TOLERANCE）
+        //    - 将工作流状态从RUNNING转换为FAILURE
+        //    - 设置工作流结束时间和失败原因
+        //
+        // 3. 失败信息记录：
+        //    - 收集并记录详细的失败原因和错误堆栈
+        //    - 记录失败任务的日志文件路径
+        //    - 保存工作流执行的上下文信息，便于问题排查
+        //    - 更新工作流实例在数据库中的失败状态
+        //
+        // 4. 告警和通知：
+        //    - 根据告警规则发送失败通知（邮件、短信、钉钉、企业微信等）
+        //    - 触发监控系统的失败告警
+        //    - 记录运维事件，便于后续问题追踪
+        //    - 如果配置了自动重启，可能触发工作流重新调度
+        //
+        // 5. 资源清理：
+        //    - 强制停止工作流相关的所有运行中任务
+        //    - 清理任务执行过程中产生的临时文件
+        //    - 释放工作流占用的计算资源和内存
+        //    - 清理相关的缓存和临时数据
+        //
+        // 6. 故障转移处理：
+        //    - 如果配置了故障转移策略，可能尝试在其他节点重新执行
+        //    - 检查是否需要触发备用工作流
+        //    - 处理依赖当前工作流的下游工作流状态
+        //
+        // 简单理解：就像一个项目的紧急叫停，需要：
+        // - 立即停止所有正在进行的工作
+        // - 分析失败原因，记录详细信息
+        // - 通知相关人员项目失败
+        // - 清理项目资源，避免资源浪费
+        // - 评估是否需要启动应急预案
         workflowStateAction.onFailedEvent(workflowExecutionRunnable, workflowFailedEvent);
     }
 

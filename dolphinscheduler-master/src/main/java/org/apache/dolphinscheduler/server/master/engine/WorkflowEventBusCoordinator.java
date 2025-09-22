@@ -90,50 +90,132 @@ public class WorkflowEventBusCoordinator implements AutoCloseable {
 
     /**
      * 注册工作流事件总线
-     * 
+     *
      * 将工作流执行实例注册到对应的事件处理工作者。
      * 一旦注册成功，该工作流的所有事件都会由指定的工作者自动处理。
-     * 
+     *
      * 核心流程：
      * 1. 根据工作流实例ID计算应该分配到哪个工作者（哈希分片）
      * 2. 获取对应的事件处理工作者
      * 3. 将工作流事件总线注册到该工作者
-     * 
+     *
      * 类比：新客户搬到某个区域，快递公司将其地址分配给对应区域的配送员。
-     * 
+     *
      * @param workflowExecutionRunnable 工作流执行实例，包含工作流的完整上下文信息
      */
     public void registerWorkflowEventBus(IWorkflowExecutionRunnable workflowExecutionRunnable) {
+        // ========== 第一步：计算工作者槽位 ==========
+        // 根据工作流ID计算该工作流应该分配到哪个工作者
+        // 使用哈希算法确保同一工作流始终分配到同一工作者
         final int workerSlot = calculateWorkflowEventBusFireWorkerSlot(workflowExecutionRunnable);
+
+        // ========== 第二步：获取目标工作者 ==========
+        // 从工作者池中获取指定槽位的事件处理工作者
+        // 每个工作者负责处理分配给它的工作流事件
         final WorkflowEventBusFireWorker workflowEventBusFireWorker = workflowEventBusFireWorkers.getWorker(workerSlot);
+
+        // ========== 第三步：注册工作流到工作者 ==========
+        // 将工作流的事件总线注册到对应的工作者
+        // 注册后，该工作流产生的所有事件都会路由到这个工作者处理
         workflowEventBusFireWorker.registerWorkflowEventBus(workflowExecutionRunnable);
     }
 
     /**
-     * UeRegister a WorkflowExecuteRunnable to the corresponding WorkflowEventBusFireWorker, once the WorkflowExecuteRunnable has been deregistered,
-     * then the EventBus will be removed from the WorkflowEventBusFireWorker.
+     * 注销工作流事件总线
+     *
+     * 从对应的事件处理工作者中移除工作流执行实例。
+     * 注销后，该工作流的事件将不再被处理，相关资源会被释放。
+     *
+     * 使用场景：
+     * - 工作流执行完成后的清理
+     * - 工作流被强制终止时的资源释放
+     * - 系统关闭时的优雅清理
+     *
+     * 类比：客户搬离某个区域，快递公司将其从配送员的服务列表中移除。
+     *
+     * @param workflowExecutionRunnable 需要注销的工作流执行实例
      */
     public void unRegisterWorkflowEventBus(IWorkflowExecutionRunnable workflowExecutionRunnable) {
+        // ========== 第一步：计算工作者槽位 ==========
+        // 使用相同的哈希算法确定工作流当前注册在哪个工作者
         final int workerSlot = calculateWorkflowEventBusFireWorkerSlot(workflowExecutionRunnable);
+
+        // ========== 第二步：获取目标工作者 ==========
+        // 获取当前持有该工作流的工作者
         final WorkflowEventBusFireWorker workflowEventBusFireWorker = workflowEventBusFireWorkers.getWorker(workerSlot);
+
+        // ========== 第三步：从工作者中注销工作流 ==========
+        // 从工作者的管理列表中移除该工作流
+        // 释放相关资源，停止事件处理
         workflowEventBusFireWorker.unRegisterWorkflowEventBus(workflowExecutionRunnable);
     }
 
     /**
-     * Calculate the slot of the WorkflowEventBusFireWorker which the WorkflowExecuteRunnable should be registered.
-     * <p> The slot is calculated by the workflowInstanceId % workerSize.
-     * <p> e.g. If the workflowInstanceId is 1, and the workerSize is 3, then the slot is 1, the workflow will be registered to the worker[1].
-     * <p> If the workflowInstanceIds are not consecutive numbers, these will cause some worker busy.
+     * 计算工作流事件处理工作者的槽位
+     *
+     * 通过哈希算法将工作流分配到特定的工作者，确保负载均衡和处理有序性。
+     *
+     * 算法原理：
+     * - 使用工作流实例ID对工作者总数取模
+     * - 保证同一工作流始终分配到同一工作者（会话亲和性）
+     * - 理论上实现均匀分布（假设ID是均匀分布的）
+     *
+     * 示例：
+     * - 工作流ID=1, 工作者数=3, 槽位=1%3=1, 分配到worker[1]
+     * - 工作流ID=4, 工作者数=3, 槽位=4%3=1, 分配到worker[1]
+     * - 工作流ID=5, 工作者数=3, 槽位=5%3=2, 分配到worker[2]
+     *
+     * 注意事项：
+     * - 如果工作流ID不是连续的，可能导致某些工作者负载较重
+     * - 工作者数量固定后不宜频繁变更，否则会导致重新分配
+     *
+     * @param workflowExecutionRunnable 工作流执行实例
+     * @return 工作者槽位索引（0到workerSize-1）
      */
     private int calculateWorkflowEventBusFireWorkerSlot(IWorkflowExecutionRunnable workflowExecutionRunnable) {
+        // ========== 第一步：获取工作流上下文 ==========
+        // 从执行实例中提取工作流执行上下文
         final IWorkflowExecuteContext workflowExecuteContext = workflowExecutionRunnable.getWorkflowExecuteContext();
+
+        // ========== 第二步：获取工作流实例 ==========
+        // 从上下文中获取工作流实例对象
         final WorkflowInstance workflowInstance = workflowExecuteContext.getWorkflowInstance();
+
+        // ========== 第三步：提取工作流ID ==========
+        // 获取工作流实例的唯一标识符
         final Integer workflowInstanceId = workflowInstance.getId();
+
+        // ========== 第四步：计算槽位 ==========
+        // 使用取模运算将工作流ID映射到工作者槽位
+        // 这确保了相同ID的工作流总是分配到同一个工作者
         return workflowInstanceId % workflowEventBusFireWorkers.getWorkerSize();
     }
 
+    /**
+     * 关闭工作流事件总线协调器
+     *
+     * 实现AutoCloseable接口，确保资源的正确释放。
+     * 关闭所有事件处理工作者，停止接收和处理新的工作流事件。
+     *
+     * 关闭流程：
+     * 1. 停止接收新的事件注册请求
+     * 2. 等待正在处理的事件完成
+     * 3. 关闭所有工作者线程
+     * 4. 释放相关资源
+     *
+     * @throws Exception 关闭过程中可能抛出的异常
+     *
+     * 类比：快递分拣中心下班时关闭所有操作台，等配送员完成手头工作。
+     */
     @Override
     public void close() throws Exception {
+        // ========== 关闭所有事件处理工作者 ==========
+        // 这会触发工作者的优雅关闭流程：
+        // 1. 停止接收新的工作流注册
+        // 2. 完成正在处理的事件
+        // 3. 关闭事件处理线程
+        // 4. 清理相关资源
         workflowEventBusFireWorkers.close();
+        log.info("WorkflowEventBusCoordinator closed");
     }
 }

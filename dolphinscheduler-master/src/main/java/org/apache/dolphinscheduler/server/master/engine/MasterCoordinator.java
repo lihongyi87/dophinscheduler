@@ -60,7 +60,7 @@ public class MasterCoordinator extends AbstractHAServer {
 
     /**
      * 构造MasterCoordinator
-     * 
+     *
      * @param registry 注册中心客户端，用于选主和状态管理
      * @param masterConfig Master配置信息
      * @param taskGroupCoordinator 任务组协调器实例
@@ -68,36 +68,69 @@ public class MasterCoordinator extends AbstractHAServer {
     public MasterCoordinator(final Registry registry,
                              final MasterConfig masterConfig,
                              final ITaskGroupCoordinator taskGroupCoordinator) {
+        // ========== 第一步：调用父类构造函数，初始化HA基础设施 ==========
+        // 传入注册中心客户端，用于进行分布式选举
+        // 设置协调器的注册路径，所有Master节点会在该路径下竞争Leader
+        // 提供本节点的地址，用于标识参与选举的Master节点
         super(
                 registry,
                 RegistryNodeType.MASTER_COORDINATOR.getRegistryPath(),
                 masterConfig.getMasterAddress());
+
+        // ========== 第二步：保存任务组协调器引用 ==========
+        // 任务组协调器是Master协调器管理的核心组件
+        // 它负责实际的任务组资源管理和调度工作
         this.taskGroupCoordinator = taskGroupCoordinator;
-        // 添加状态变化监听器，当选主状态发生变化时自动启动/停止协调器
+
+        // ========== 第三步：注册状态变化监听器 ==========
+        // 添加状态监听器，监听本节点的Active/StandBy状态变化
+        // 当成为Leader时启动任务组协调器
+        // 当失去Leader地位时停止任务组协调器
+        // 这确保了整个集群中只有一个活跃的任务组协调器
         addServerStatusChangeListener(new MasterCoordinatorListener(taskGroupCoordinator));
     }
 
     /**
      * 启动Master协调器
-     * 
+     *
      * 启动高可用性选主机制，开始参与Master节点的选举。
      * 只有被选为Leader的节点才会变为Active状态。
      */
     @Override
     public void start() {
+        // ========== 启动HA选主机制 ==========
+        // 调用父类的start方法，这会：
+        // 1. 在注册中心创建临时顺序节点参与选举
+        // 2. 监听Leader节点的变化
+        // 3. 如果本节点成为Leader，触发changeToActive回调
+        // 4. 如果本节点不是Leader，保持StandBy状态并持续监听
         super.start();
+
+        // 记录启动完成日志
         log.info("MasterCoordinator started...");
     }
 
     /**
      * 关闭Master协调器
-     * 
+     *
      * 停止所有协调服务，释放相关资源，退出选主竞争。
      */
     @Override
     public void close() {
+        // ========== 第一步：关闭任务组协调器 ==========
+        // 停止任务组的管理和调度工作
+        // 释放任务组相关的资源（如数据库连接、缓存等）
+        // 确保正在进行的任务组操作能够优雅结束
         taskGroupCoordinator.close();
+
+        // ========== 第二步：记录关闭日志 ==========
+        // 记录关闭完成，便于运维人员了解节点状态
         log.info("MasterCoordinator shutdown...");
+
+        // 注：父类的close方法会在外部调用，负责：
+        // - 从注册中心删除选举节点
+        // - 停止Leader监听
+        // - 清理HA相关资源
     }
 
     /**
@@ -120,23 +153,38 @@ public class MasterCoordinator extends AbstractHAServer {
 
         /**
          * 变为Active状态时的处理
-         * 
+         *
          * 当此Master节点被选为Leader时，启动任务组协调器，
          * 开始执行任务组的管理和协调工作。
          */
         @Override
         public void changeToActive() {
+            // ========== 启动任务组协调器 ==========
+            // 当本节点成为Leader时，立即启动任务组协调器
+            // 任务组协调器会：
+            // 1. 从数据库加载所有活跃的任务组信息
+            // 2. 初始化任务组的资源分配和限制
+            // 3. 开始监控任务组的使用情况
+            // 4. 处理任务组的申请和释放请求
             taskGroupCoordinator.start();
         }
 
         /**
          * 变为StandBy状态时的处理
-         * 
+         *
          * 当此Master节点失去Leader地位时，停止任务组协调器，
          * 释放资源，等待下次被选为Leader。
          */
         @Override
         public void changeToStandBy() {
+            // ========== 停止任务组协调器 ==========
+            // 当本节点失去Leader地位时，立即停止任务组协调器
+            // 停止过程会：
+            // 1. 停止接收新的任务组请求
+            // 2. 清理内存中的任务组状态信息
+            // 3. 关闭与任务组相关的监控线程
+            // 4. 释放所有占用的系统资源
+            // 这确保了新的Leader可以接管任务组管理工作
             taskGroupCoordinator.close();
         }
     }

@@ -31,38 +31,70 @@ import javax.annotation.Nullable;
 
 import lombok.NonNull;
 
+/**
+ * 参数固化服务接口
+ *
+ * 负责工作流和任务参数的解析、替换和固化处理。
+ * 在任务执行前将各种参数占位符替换为实际值。
+ *
+ * 参数类型：
+ * - 内置参数：系统预定义的参数，如${system.datetime}
+ * - 全局参数：工作流级别的参数
+ * - 本地参数：任务级别的参数
+ * - 项目参数：项目级别的参数
+ * - 父工作流参数：从父工作流传递的参数
+ *
+ * 参数优先级（从高到低）：
+ * 本地参数 > 工作流参数 > 项目参数 > 全局参数
+ *
+ * 应用场景：
+ * - 动态配置：根据环境、时间等动态设置参数
+ * - 参数传递：在任务间传递参数
+ * - 模板化配置：使用参数模板实现灵活配置
+ *
+ * 类比：就像模板引擎，将模板中的变量占位符替换为实际值。
+ */
 public interface CuringParamsService {
 
     /**
-     * convert parameter placeholders
-     * @param val
-     * @param allParamMap
-     * @return
+     * 转换参数占位符
+     *
+     * 将字符串中的参数占位符替换为实际值
+     *
+     * @param val 包含占位符的字符串
+     * @param allParamMap 所有参数映射
+     * @return 替换后的字符串
      */
     String convertParameterPlaceholders(String val, Map<String, Property> allParamMap);
 
     /**
-     * curing global params
-     * @param workflowInstanceId
-     * @param globalParamMap
-     * @param globalParamList
-     * @param commandType
-     * @param scheduleTime
-     * @param timezone
-     * @return
+     * 固化全局参数
+     *
+     * 将全局参数中的占位符替换为实际值，处理内置参数
+     *
+     * @param workflowInstanceId 工作流实例ID
+     * @param globalParamMap 全局参数映射
+     * @param globalParamList 全局参数列表
+     * @param commandType 命令类型
+     * @param scheduleTime 调度时间
+     * @param timezone 时区
+     * @return 固化后的参数JSON字符串
      */
     String curingGlobalParams(Integer workflowInstanceId, Map<String, String> globalParamMap,
                               List<Property> globalParamList, CommandType commandType, Date scheduleTime,
                               String timezone);
 
     /**
-     * param parsing preparation
-     * @param parameters
-     * @param taskInstance
-     * @param workflowInstance
-     * @param projectName
-     * @param workflowDefinitionName
-     * @return
+     * 参数解析准备
+     *
+     * 为任务执行准备所有需要的参数，包括全局参数、本地参数等
+     *
+     * @param taskInstance 任务实例
+     * @param parameters 任务参数
+     * @param workflowInstance 工作流实例
+     * @param projectName 项目名称
+     * @param workflowDefinitionName 工作流定义名称
+     * @return 所有参数的映射
      */
     Map<String, Property> paramParsingPreparation(@NonNull TaskInstance taskInstance,
                                                   @NonNull AbstractParameters parameters,
@@ -71,21 +103,36 @@ public interface CuringParamsService {
                                                   String workflowDefinitionName);
 
     /**
-     * Parse workflow star parameter
+     * 解析工作流启动参数
+     *
+     * @param cmdParam 命令参数
+     * @return 启动参数映射
      */
     Map<String, Property> parseWorkflowStartParam(@Nullable Map<String, String> cmdParam);
 
     /**
-     * Parse workflow father parameter
+     * 解析父工作流参数
+     *
+     * @param cmdParam 命令参数
+     * @return 父工作流参数映射
      */
     Map<String, Property> parseWorkflowFatherParam(@Nullable Map<String, String> cmdParam);
 
     /**
-     * preBuildBusinessParams
-     * @param workflowInstance
-     * @return
+     * 预构建业务参数
+     *
+     * 构建工作流执行所需的内置业务参数
+     *
+     * @param workflowInstance 工作流实例
+     * @return 业务参数映射
      */
     Map<String, Property> preBuildBusinessParams(WorkflowInstance workflowInstance);
 
+    /**
+     * 获取项目参数映射
+     *
+     * @param projectCode 项目代码
+     * @return 项目参数映射
+     */
     Map<String, Property> getProjectParameterMap(long projectCode);
 }

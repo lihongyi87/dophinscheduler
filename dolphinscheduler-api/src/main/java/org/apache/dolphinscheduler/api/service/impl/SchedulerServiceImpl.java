@@ -81,6 +81,21 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cronutils.model.Cron;
 
+/**
+ * 调度服务实现类
+ *
+ * <p>该类实现了工作流定时调度的管理功能。通过cron表达式定义
+ * 工作流的执行时间，实现任务的自动化调度执行。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>创建和管理调度配置</li>
+ *   <li>解析和验证cron表达式</li>
+ *   <li>上线和下线调度任务</li>
+ *   <li>查询调度执行计划</li>
+ *   <li>管理调度参数和环境配置</li>
+ * </ul>
+ */
 @Service
 @Slf4j
 public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerService {
@@ -110,14 +125,14 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
     private TenantMapper tenantMapper;
 
     /**
-     * save schedule
+     * 保存调度配置
      *
-     * @param loginUser               login user
-     * @param projectCode             project name
-     * @param workflowDefinitionCode       workflow definition code
-     * @param schedule                scheduler
-     * @param warningType             warning type
-     * @param warningGroupId          warning group id
+     * @param loginUser               登录用户
+     * @param projectCode             项目编码
+     * @param workflowDefinitionCode  工作流定义编码
+     * @param schedule                调度对象
+     * @param warningType             告警类型
+     * @param warningGroupId          告警组ID
      * @param failureStrategy         failure strategy
      * @param workflowInstancePriority workflow instance priority
      * @param workerGroup             worker group

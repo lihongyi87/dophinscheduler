@@ -148,25 +148,57 @@ public class WorkflowEventBusFireWorkers implements AutoCloseable {
      * 启动定时任务让客服定期查看是否有新来电需要处理。
      */
     public void start() {
+        // ==========第一步：获取工作者数量配置==========
+        // 从Master配置中读取工作流事件总线的工作者线程数量
+        // 这个数量决定了系统的并行处理能力，通常设置为CPU核数的2-4倍
         final int workflowEventBusFireThreadCount = masterConfig.getWorkflowEventBusFireThreadCount();
+
+        // ==========第二步：创建定时调度线程池==========
+        // 创建专门用于工作流事件处理的定时线程池
+        // 线程池大小等于工作者数量，每个工作者对应一个调度线程
+        // 使用守护线程工厂，确保不会阻止JVM正常退出
         workflowEventBusFireThreadPool = Executors.newScheduledThreadPool(
-                workflowEventBusFireThreadCount,
-                ThreadUtils.newDaemonThreadFactory("ds-workflow-eventbus-worker-%d"));
+                workflowEventBusFireThreadCount, // 线程池大小
+                ThreadUtils.newDaemonThreadFactory("ds-workflow-eventbus-worker-%d")); // 守护线程工厂
+
+        // ==========第三步：初始化工作者数组==========
+        // 创建工作者数组，数组大小等于配置的线程数量
+        // 每个数组元素将存储一个独立的事件处理工作者
         workflowEventBusFireWorkers = new WorkflowEventBusFireWorker[workflowEventBusFireThreadCount];
 
+        // ==========第四步：循环创建和配置工作者==========
         for (int i = 0; i < workflowEventBusFireThreadCount; i++) {
+            // ----------创建单个工作者实例----------
+            // 为当前槽位创建新的事件处理工作者
             final WorkflowEventBusFireWorker workflowEventBusFireWorker = new WorkflowEventBusFireWorker();
+
+            // ----------注册事件处理器----------
+            // 将所有类型的事件处理器注册到当前工作者
+            // 这确保每个工作者都能处理所有类型的生命周期事件
+            // 包括：任务启动、运行、成功、失败、工作流完成等事件
             eventHandlers.forEach(workflowEventBusFireWorker::registerEventHandler);
+
+            // ----------将工作者存入数组----------
+            // 将配置好的工作者放入对应的数组槽位
+            // 后续可以通过数组索引快速定位特定的工作者
             workflowEventBusFireWorkers[i] = workflowEventBusFireWorker;
 
+            // ----------安排定时调度任务----------
+            // 为当前工作者安排定时执行的事件处理任务
+            // 使用scheduleWithFixedDelay确保固定间隔执行
             workflowEventBusFireThreadPool.scheduleWithFixedDelay(
-                    workflowEventBusFireWorker::fireAllRegisteredEvent,
-                    DEFAULT_FIRE_INTERVAL,
-                    // todo: do not use a fixed interval for all worker, each worker use wait notify to control the fire
-                    // interval
-                    DEFAULT_FIRE_INTERVAL,
-                    TimeUnit.MILLISECONDS);
+                    workflowEventBusFireWorker::fireAllRegisteredEvent, // 要执行的方法
+                    DEFAULT_FIRE_INTERVAL, // 初始延迟时间（100ms）
+                    // TODO: 未来优化点 - 不为所有工作者使用固定间隔
+                    // 每个工作者应该使用等待-通知机制控制触发间隔
+                    // 这样可以在有事件时立即处理，无事件时减少CPU消耗
+                    DEFAULT_FIRE_INTERVAL, // 执行间隔时间（100ms）
+                    TimeUnit.MILLISECONDS); // 时间单位
         }
+
+        // ==========启动完成==========
+        // 记录启动成功日志，包含工作者数量信息
+        // 此时所有工作者都已创建并开始定时执行事件处理任务
         log.info("WorkflowEventBusFireWorkers started, worker size: {}", workflowEventBusFireThreadCount);
     }
 
@@ -234,9 +266,22 @@ public class WorkflowEventBusFireWorkers implements AutoCloseable {
      */
     @Override
     public void close() throws Exception {
+        // ==========检查线程池是否存在==========
+        // 防止在未初始化或已关闭的情况下调用shutdown方法
+        // 这是一种防御性编程的做法，确保关闭操作的安全性
         if (workflowEventBusFireThreadPool != null) {
+            // ==========执行线程池优雅关闭==========
+            // 调用shutdown()方法优雅关闭线程池：
+            // 1. 停止接收新的调度任务
+            // 2. 等待已提交的任务完成执行
+            // 3. 释放线程池相关资源
+            // 注意：这不会强制中断正在执行的任务，确保事件处理完整性
             workflowEventBusFireThreadPool.shutdown();
         }
+
+        // ==========记录关闭完成日志==========
+        // 记录工作者集合关闭完成的日志信息
+        // 便于运维人员了解系统组件的关闭状态
         log.info("WorkflowEventBusFireWorkers closed");
     }
 }

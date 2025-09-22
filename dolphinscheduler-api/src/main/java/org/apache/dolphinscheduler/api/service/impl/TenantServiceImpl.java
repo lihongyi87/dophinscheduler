@@ -62,6 +62,21 @@ import org.springframework.transaction.annotation.Transactional;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
+/**
+ * 租户服务实现类
+ *
+ * <p>该类实现了租户的管理功能。租户是系统中的资源隔离单元，
+ * 不同租户的任务在执行时会使用不同的系统用户和资源目录。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>创建和管理租户</li>
+ *   <li>租户与队列关联</li>
+ *   <li>租户权限控制</li>
+ *   <li>租户资源隔离</li>
+ *   <li>查询租户列表</li>
+ * </ul>
+ */
 @Service
 @Slf4j
 public class TenantServiceImpl extends BaseServiceImpl implements TenantService {
@@ -85,42 +100,55 @@ public class TenantServiceImpl extends BaseServiceImpl implements TenantService 
     private StorageOperator storageOperator;
 
     /**
-     * Check the tenant new object valid or not
+     * 检查新建租户对象的有效性
      *
-     * @param tenant The tenant object want to create
+     * @param tenant 要创建的租户对象
      */
     private void createTenantValid(Tenant tenant) throws ServiceException {
+        // 检查租户代码是否为空
         if (StringUtils.isEmpty(tenant.getTenantCode())) {
             throw new ServiceException(Status.REQUEST_PARAMS_NOT_VALID_ERROR, tenant.getTenantCode());
-        } else if (StringUtils.length(tenant.getTenantCode()) > TENANT_FULL_NAME_MAX_LENGTH) {
+        }
+        // 检查租户代码长度是否超过最大限制
+        else if (StringUtils.length(tenant.getTenantCode()) > TENANT_FULL_NAME_MAX_LENGTH) {
             throw new ServiceException(Status.TENANT_FULL_NAME_TOO_LONG_ERROR);
-        } else if (!RegexUtils.isValidLinuxUserName(tenant.getTenantCode())) {
+        }
+        // 检查租户代码是否符合Linux用户名规范
+        else if (!RegexUtils.isValidLinuxUserName(tenant.getTenantCode())) {
             throw new ServiceException(Status.CHECK_OS_TENANT_CODE_ERROR);
-        } else if (checkTenantExists(tenant.getTenantCode())) {
+        }
+        // 检查租户代码是否已存在
+        else if (checkTenantExists(tenant.getTenantCode())) {
             throw new ServiceException(Status.OS_TENANT_CODE_EXIST, tenant.getTenantCode());
         }
     }
 
     /**
-     * Check tenant update object valid or not
+     * 检查更新租户对象的有效性
      *
-     * @param existsTenant The exists queue object
-     * @param updateTenant The queue object want to update
+     * @param existsTenant 已存在的租户对象
+     * @param updateTenant 要更新的租户对象
      */
     private void updateTenantValid(Tenant existsTenant, Tenant updateTenant) throws ServiceException {
-        // Check the exists tenant
+        // 检查租户是否存在
         if (Objects.isNull(existsTenant)) {
             log.error("Tenant does not exist.");
             throw new ServiceException(Status.TENANT_NOT_EXIST);
         }
-        // Check the update tenant parameters
+        // 检查更新的租户代码是否为空
         else if (StringUtils.isEmpty(updateTenant.getTenantCode())) {
             throw new ServiceException(Status.REQUEST_PARAMS_NOT_VALID_ERROR, updateTenant.getTenantCode());
-        } else if (StringUtils.length(updateTenant.getTenantCode()) > TENANT_FULL_NAME_MAX_LENGTH) {
+        }
+        // 检查租户代码长度是否超过最大限制
+        else if (StringUtils.length(updateTenant.getTenantCode()) > TENANT_FULL_NAME_MAX_LENGTH) {
             throw new ServiceException(Status.TENANT_FULL_NAME_TOO_LONG_ERROR);
-        } else if (!RegexUtils.isValidLinuxUserName(updateTenant.getTenantCode())) {
+        }
+        // 检查租户代码是否符合Linux用户名规范
+        else if (!RegexUtils.isValidLinuxUserName(updateTenant.getTenantCode())) {
             throw new ServiceException(Status.CHECK_OS_TENANT_CODE_ERROR);
-        } else if (!Objects.equals(existsTenant.getTenantCode(), updateTenant.getTenantCode())
+        }
+        // 如果租户代码发生变化，检查新代码是否已存在
+        else if (!Objects.equals(existsTenant.getTenantCode(), updateTenant.getTenantCode())
                 && checkTenantExists(updateTenant.getTenantCode())) {
             throw new ServiceException(Status.OS_TENANT_CODE_EXIST, updateTenant.getTenantCode());
         }
@@ -135,20 +163,34 @@ public class TenantServiceImpl extends BaseServiceImpl implements TenantService 
      * @param desc description
      * @return create result code
      */
+    /**
+     * 创建租户
+     *
+     * @param loginUser 登录用户
+     * @param tenantCode 租户代码
+     * @param queueId 队列ID
+     * @param desc 描述
+     * @return 创建的租户对象
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Tenant createTenant(User loginUser,
                                String tenantCode,
                                int queueId,
                                String desc) {
+        // 检查用户是否有创建租户的权限
         if (!canOperatorPermissions(loginUser, null, AuthorizationType.TENANT, TENANT_CREATE)) {
             throw new ServiceException(Status.USER_NO_OPERATION_PERM);
         }
+        // 检查描述长度是否超限
         if (checkDescriptionLength(desc)) {
             throw new ServiceException(Status.DESCRIPTION_TOO_LONG_ERROR);
         }
+        // 创建租户对象
         Tenant tenant = new Tenant(tenantCode, desc, queueId);
+        // 验证租户对象的有效性
         createTenantValid(tenant);
+        // 将租户信息插入数据库
         tenantMapper.insert(tenant);
 
         return tenant;
@@ -163,15 +205,28 @@ public class TenantServiceImpl extends BaseServiceImpl implements TenantService 
      * @param pageSize  page size
      * @return tenant list page
      */
+    /**
+     * 分页查询租户列表
+     *
+     * @param loginUser 登录用户
+     * @param searchVal 搜索关键词
+     * @param pageNo    页码
+     * @param pageSize  每页大小
+     * @return 租户列表分页数据
+     */
     @Override
     public PageInfo<Tenant> queryTenantList(User loginUser, String searchVal, Integer pageNo, Integer pageSize) {
 
+        // 获取用户有权限查看的租户ID集合
         Set<Integer> ids = resourcePermissionCheckService.userOwnedResourceIdsAcquisition(AuthorizationType.TENANT,
                 loginUser.getId(), log);
+        // 如果用户没有任何租户权限，返回空分页
         if (CollectionUtils.isEmpty(ids)) {
             return new PageInfo<>(pageNo, pageSize);
         }
+        // 创建分页对象
         Page<Tenant> page = new Page<>(pageNo, pageSize);
+        // 执行分页查询
         IPage<Tenant> tenantPage = tenantMapper.queryTenantPaging(page, new ArrayList<>(ids), searchVal);
         return PageInfo.of(tenantPage);
     }

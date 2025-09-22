@@ -67,6 +67,21 @@ import org.springframework.transaction.annotation.Transactional;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
+/**
+ * 任务实例服务实现类
+ *
+ * <p>该类实现了任务实例的管理功能。任务实例是工作流实例中
+ * 具体执行的任务节点，记录了任务的执行状态、日志、结果等信息。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>查询任务实例列表和详情</li>
+ *   <li>强制任务成功或失败</li>
+ *   <li>停止正在执行的任务</li>
+ *   <li>管理流式任务的savepoint</li>
+ *   <li>下载任务执行日志</li>
+ * </ul>
+ */
 @Service
 @Slf4j
 public class TaskInstanceServiceImpl extends BaseServiceImpl implements TaskInstanceService {

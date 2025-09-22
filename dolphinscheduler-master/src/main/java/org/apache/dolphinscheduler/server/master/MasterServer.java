@@ -58,6 +58,25 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Import;
 
+/**
+ * DolphinScheduler Master服务器主类
+ *
+ * Master节点是调度系统的控制中心，负责工作流的调度、任务分发和集群管理。
+ * 主要职责包括：
+ * 1. DAG工作流解析和调度
+ * 2. 任务分发到Worker节点
+ * 3. 集群状态监控和故障转移
+ * 4. 定时任务调度管理
+ * 5. 提供RPC服务接口
+ *
+ * 系统架构：
+ * - 基于Spring Boot构建的微服务架构
+ * - 使用Netty实现高性能RPC通信
+ * - 通过ZooKeeper/Etcd实现服务注册与发现
+ * - 采用事件驱动的异步处理模型
+ *
+ * @author Apache DolphinScheduler
+ */
 @Slf4j
 @Import({DaoConfiguration.class,
         ServiceConfiguration.class,
@@ -67,47 +86,98 @@ import org.springframework.context.annotation.Import;
 @SpringBootApplication
 public class MasterServer implements IStoppable {
 
+    /**
+     * Spring应用上下文 - 管理所有Spring Bean的生命周期
+     */
     @Autowired
     private SpringApplicationContext springApplicationContext;
 
+    /**
+     * Master注册中心客户端 - 负责节点注册、心跳维持和服务发现
+     */
     @Autowired
     private MasterRegistryClient masterRegistryClient;
 
+    /**
+     * 工作流引擎 - DAG任务调度的核心组件，处理工作流的解析、调度和执行
+     */
     @Autowired
     private WorkflowEngine workflowEngine;
 
+    /**
+     * 调度器API - 处理定时任务的调度，支持Cron表达式
+     */
     @Autowired
     private SchedulerApi schedulerApi;
 
+    /**
+     * Master RPC服务器 - 基于Netty的RPC服务，接收Worker节点的任务执行结果
+     */
     @Autowired
     private MasterRpcServer masterRPCServer;
 
+    /**
+     * 监控指标提供者 - 收集系统性能指标，如CPU、内存使用率
+     */
     @Autowired
     private MetricsProvider metricsProvider;
 
+    /**
+     * 集群状态监控器 - 监控Master和Worker节点的健康状态，触发故障转移
+     */
     @Autowired
     private ClusterStateMonitors clusterStateMonitors;
 
+    /**
+     * 集群管理器 - 管理整个集群的拓扑结构和节点信息
+     */
     @Autowired
     private ClusterManager clusterManager;
 
+    /**
+     * 系统事件总线 - 发布订阅模式的事件处理中心，处理系统级事件
+     */
     @Autowired
     private SystemEventBus systemEventBus;
 
+    /**
+     * 系统事件总线工作线程 - 异步处理系统事件，避免阻塞主线程
+     */
     @Autowired
     private SystemEventBusFireWorker systemEventBusFireWorker;
 
+    /**
+     * Master协调器 - 处理Master节点间的协调，包括选主和任务分配
+     */
     @Autowired
     private MasterCoordinator masterCoordinator;
 
+    /**
+     * Worker组分发协调器 - 管理任务到Worker组的分发策略
+     */
     @Autowired
     private WorkerGroupDispatcherCoordinator workerGroupDispatcherCoordinator;
 
+    /**
+     * Master服务器启动入口
+     *
+     * 启动流程：
+     * 1. 注册未捕获异常处理器 - 用于记录和监控异常
+     * 2. 设置默认异常处理器 - 确保异常不会导致线程意外终止
+     * 3. 设置主线程名称 - 便于日志追踪和问题定位
+     * 4. 启动Spring Boot应用 - 初始化所有Bean并启动服务
+     *
+     * @param args 命令行参数
+     */
     public static void main(String[] args) {
+        // 注册未捕获异常计数器，用于监控系统稳定性
         MasterServerMetrics.registerUncachedException(DefaultUncaughtExceptionHandler::getUncaughtExceptionCount);
 
+        // 设置默认的未捕获异常处理器，避免线程异常退出
         Thread.setDefaultUncaughtExceptionHandler(DefaultUncaughtExceptionHandler.getInstance());
+        // 设置主线程名称，便于日志分析
         Thread.currentThread().setName(Constants.THREAD_NAME_MASTER_SERVER);
+        // 启动Spring Boot应用
         SpringApplication.run(MasterServer.class);
     }
 

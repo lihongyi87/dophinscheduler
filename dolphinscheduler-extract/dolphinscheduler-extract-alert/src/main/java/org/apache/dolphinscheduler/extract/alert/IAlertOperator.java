@@ -23,12 +23,37 @@ import org.apache.dolphinscheduler.extract.alert.request.AlertTestSendRequest;
 import org.apache.dolphinscheduler.extract.base.RpcMethod;
 import org.apache.dolphinscheduler.extract.base.RpcService;
 
+/**
+ * 告警操作接口
+ *
+ * <p>该接口定义了告警服务的RPC操作方法。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>发送正式告警信息</li>
+ *   <li>发送测试告警信息</li>
+ *   <li>支持多种告警通道(邮件、短信、钉钉、微信等)</li>
+ * </ul>
+ */
 @RpcService
 public interface IAlertOperator {
 
+    /**
+     * 发送告警信息
+     *
+     * @param alertSendRequest 告警发送请求，包含告警内容和接收者信息
+     * @return 告警发送响应，包含发送结果和状态
+     */
     @RpcMethod
     AlertSendResponse sendAlert(AlertSendRequest alertSendRequest);
 
+    /**
+     * 发送测试告警
+     * 用于验证告警配置是否正确
+     *
+     * @param alertSendRequest 测试告警发送请求
+     * @return 告警发送响应，包含测试结果
+     */
     @RpcMethod
     AlertSendResponse sendTestAlert(AlertTestSendRequest alertSendRequest);
 

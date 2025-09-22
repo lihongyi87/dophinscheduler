@@ -26,21 +26,65 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+/**
+ * 工作流启动生命周期事件
+ *
+ * 当需要启动一个工作流实例时触发的事件。
+ * 这是工作流生命周期的起始事件，标志着工作流开始执行。
+ *
+ * 使用场景：
+ * 1. 用户手动触发工作流执行
+ * 2. 定时调度器触发工作流启动
+ * 3. 工作流重启或重试时的启动
+ *
+ * 处理结果：
+ * - 工作流状态从初始状态转换为运行状态
+ * - 初始化工作流执行环境
+ * - 开始执行工作流中的起始任务
+ *
+ * @author DolphinScheduler
+ */
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class WorkflowStartLifecycleEvent extends AbstractWorkflowLifecycleLifecycleEvent {
 
+    /**
+     * 工作流执行对象
+     *
+     * 包含了工作流的完整执行信息，如工作流定义、实例信息、
+     * 执行上下文、任务列表等。
+     */
     private IWorkflowExecutionRunnable workflowExecutionRunnable;
 
+    /**
+     * 创建工作流启动事件
+     *
+     * 使用静态工厂方法创建事件实例，提供更好的代码可读性。
+     *
+     * @param workflowExecutionRunnable 要启动的工作流执行对象
+     * @return 工作流启动事件实例
+     */
     public static WorkflowStartLifecycleEvent of(IWorkflowExecutionRunnable workflowExecutionRunnable) {
         return new WorkflowStartLifecycleEvent(workflowExecutionRunnable);
     }
 
+    /**
+     * 获取事件类型
+     *
+     * @return 工作流启动事件类型
+     */
     @Override
     public ILifecycleEventType getEventType() {
         return WorkflowLifecycleEventType.START;
     }
 
+    /**
+     * 事件的字符串表示
+     *
+     * 用于日志记录和调试，显示相关的工作流信息。
+     *
+     * @return 包含工作流名称的字符串描述
+     */
     @Override
     public String toString() {
         return "WorkflowStartLifecycleEvent{" +

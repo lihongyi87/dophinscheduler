@@ -136,30 +136,53 @@ public class MasterHeartBeatTask extends BaseHeartBeatTask<MasterHeartBeat> {
         
         // 构建心跳信号对象，包含所有重要的状态信息
         return MasterHeartBeat.builder()
-                .startupTime(ServerLifeCycleManager.getServerStartupTime())    // 节点启动时间
-                .reportTime(System.currentTimeMillis())                        // 当前报告时间
-                .jvmCpuUsage(systemMetrics.getJvmCpuUsagePercentage())         // JVM CPU使用率
-                .cpuUsage(systemMetrics.getSystemCpuUsagePercentage())         // 系统CPU使用率
-                .jvmMemoryUsage(systemMetrics.getJvmMemoryUsedPercentage())    // JVM内存使用率
-                .jvmHeapUsed(systemMetrics.getJvmHeapUsed())                   // JVM堆内存使用量
-                .jvmHeapMax(systemMetrics.getJvmHeapMax())
-                .jvmNonHeapUsed(systemMetrics.getJvmNonHeapUsed())
-                .jvmNonHeapMax(systemMetrics.getJvmNonHeapMax())
-                .memoryUsage(systemMetrics.getSystemMemoryUsedPercentage())
-                .diskUsage(systemMetrics.getDiskUsedPercentage())
-                .processId(processId)
-                .serverStatus(
+                .startupTime(ServerLifeCycleManager.getServerStartupTime())    // 节点启动时间 - 用于计算运行时长
+                .reportTime(System.currentTimeMillis())                        // 当前报告时间 - 用于检测心跳延迟
+                .jvmCpuUsage(systemMetrics.getJvmCpuUsagePercentage())         // JVM CPU使用率 - 应用层CPU消耗
+                .cpuUsage(systemMetrics.getSystemCpuUsagePercentage())         // 系统CPU使用率 - 整机CPU消耗
+                .jvmMemoryUsage(systemMetrics.getJvmMemoryUsedPercentage())    // JVM内存使用率 - Java堆内存占用百分比
+                .jvmHeapUsed(systemMetrics.getJvmHeapUsed())                   // JVM堆内存使用量 - 实际使用的堆内存大小
+                .jvmHeapMax(systemMetrics.getJvmHeapMax())                     // JVM堆内存最大值 - 堆内存上限
+                .jvmNonHeapUsed(systemMetrics.getJvmNonHeapUsed())             // JVM非堆内存使用量 - 方法区、直接内存等
+                .jvmNonHeapMax(systemMetrics.getJvmNonHeapMax())               // JVM非堆内存最大值 - 非堆内存上限
+                .memoryUsage(systemMetrics.getSystemMemoryUsedPercentage())    // 系统内存使用率 - 整机内存占用百分比
+                .diskUsage(systemMetrics.getDiskUsedPercentage())              // 磁盘使用率 - 磁盘空间占用百分比
+                .processId(processId)                                          // 进程ID - 用于唯一标识Master进程
+                .serverStatus(                                                 // 服务器状态 - 根据负载情况判断
                         masterServerLoadProtection.isOverload(systemMetrics) ? ServerStatus.BUSY : ServerStatus.NORMAL)
-                .host(NetUtils.getHost())
-                .port(masterConfig.getListenPort())
-                .isCoordinator(masterCoordinator.isActive())
+                .host(NetUtils.getHost())                                      // 主机地址 - Master所在服务器的IP地址
+                .port(masterConfig.getListenPort())                           // 监听端口 - Master服务监听的端口号
+                .isCoordinator(masterCoordinator.isActive())                   // 是否为协调者 - 在多Master场景下标识主Master
                 .build();
     }
 
+    /**
+     * 将心跳信息写入注册中心
+     *
+     * 这是心跳任务的核心方法，负责将Master节点的实时状态信息更新到注册中心。
+     * 这个方法会在以下情况下被调用：
+     * 1. 定时心跳：每隔一段时间自动执行
+     * 2. 状态变化：Master状态发生重要变化时主动触发
+     *
+     * 重要的安全检查：
+     * 在写入心跳信息之前，会检查是否存在“故障转移标记”。
+     * 如果存在，说明集群已经认为该Master失效并做了故障转移，
+     * 此时Master必须立即停止服务，避免“脑裂”问题。
+     *
+     * 什么是“脑裂”问题？
+     * 在分布式系统中，如果网络分区导致多个Master都认为自己是主节点，
+     * 就会同时处理相同的任务，导致数据不一致。
+     *
+     * @param masterHeartBeat 包含Master节点所有状态信息的心跳对象
+     */
     @Override
     public void writeHeartBeat(final MasterHeartBeat masterHeartBeat) {
+        // 获取故障转移标记路径
+        // 这个路径的存在表示集群已经认为该Master失效并做了故障转移
         final String failoverNodePath = RegistryUtils.getFailoveredNodePath(masterHeartBeat);
         if (registryClient.exists(failoverNodePath)) {
+            // 发现故障转移标记，说明集群已经认为该Master不可用
+            // 为了避免脑裂问题，必须立即停止服务
             log.warn("The master: {} is under {}, means it has been failover will close myself",
                     masterHeartBeat,
                     failoverNodePath);
@@ -168,9 +191,17 @@ public class MasterHeartBeatTask extends BaseHeartBeatTask<MasterHeartBeat> {
                     .stop("The master exist: " + failoverNodePath + ", means it has been failover will close myself");
             return;
         }
+
+        // 将心跳对象转换为JSON格式的字符串
         String masterHeartBeatJson = JSONUtils.toJsonString(masterHeartBeat);
+
+        // 将心跳信息作为临时节点存储到注册中心
+        // 临时节点的特点：当Master与注册中心断开连接时会自动被删除
         registryClient.persistEphemeral(heartBeatPath, masterHeartBeatJson);
+
+        // 更新心跳指标计数器，用于监控和统计
         MasterServerMetrics.incMasterHeartbeatCount();
+
         log.debug("Success write master heartBeatInfo into registry, masterRegistryPath: {}, heartBeatInfo: {}",
                 heartBeatPath,
                 masterHeartBeatJson);

@@ -93,6 +93,22 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+/**
+ * 资源服务实现类
+ *
+ * <p>该类实现了资源文件的管理功能。资源文件包括脚本文件、配置文件、
+ * JAR包等，用于支持任务执行时的文件依赖管理。</p>
+ *
+ * <p>主要功能：</p>
+ * <ul>
+ *   <li>创建和管理文件和目录</li>
+ *   <li>上传和下载资源文件</li>
+ *   <li>文件内容的在线编辑</li>
+ *   <li>资源文件的重命名和删除</li>
+ *   <li>分页查询资源列表</li>
+ *   <li>资源权限管理</li>
+ * </ul>
+ */
 @Service
 @Slf4j
 public class ResourcesServiceImpl extends BaseServiceImpl implements ResourcesService {
@@ -160,43 +176,72 @@ public class ResourcesServiceImpl extends BaseServiceImpl implements ResourcesSe
     @Autowired
     private PagingResourceItemRequestTransformer pagingResourceItemRequestTransformer;
 
+    /**
+     * 创建目录
+     *
+     * @param createDirectoryRequest 创建目录请求对象
+     */
     @Override
     public void createDirectory(CreateDirectoryRequest createDirectoryRequest) {
+        // 将请求对象转换为DTO对象
         CreateDirectoryDto createDirectoryDto = createDirectoryRequestTransformer.transform(createDirectoryRequest);
+        // 验证DTO对象的合法性，包括权限、路径等
         createDirectoryDtoValidator.validate(createDirectoryDto);
 
+        // 通过存储操作器创建目录
         storageOperator.createStorageDir(createDirectoryDto.getDirectoryAbsolutePath());
         log.info("Success create directory: {}", createDirectoryRequest.getParentAbsoluteDirectory());
     }
 
+    /**
+     * 创建文件（通过文件上传）
+     *
+     * @param createFileRequest 创建文件请求对象
+     */
     @Override
     public void createFile(CreateFileRequest createFileRequest) {
+        // 将请求对象转换为DTO对象
         CreateFileDto createFileDto = createFileRequestTransformer.transform(createFileRequest);
+        // 验证文件创建的合法性，包括权限、文件大小、文件类型等
         createFileDtoValidator.validate(createFileDto);
 
         // todo: use storage proxy
+        // 获取上传的文件对象
         MultipartFile file = createFileDto.getFile();
+        // 获取文件的绝对路径
         String fileAbsolutePath = createFileDto.getFileAbsolutePath();
+        // 先将文件复制到本地临时目录
         String srcLocalTmpFileAbsolutePath = copyFileToLocal(file);
         try {
+            // 上传文件到存储系统（如HDFS、S3等）
             storageOperator.upload(srcLocalTmpFileAbsolutePath, fileAbsolutePath, true, false);
+            // 记录文件上传大小的监控指标
             ApiServerMetrics.recordApiResourceUploadSize(file.getSize());
             log.info("Success upload resource file: {} complete.", fileAbsolutePath);
         } catch (Exception ex) {
-            // If exception, clear the tmp path
+            // 如果上传失败，清理临时文件
             FileUtils.deleteFile(srcLocalTmpFileAbsolutePath);
             throw ex;
         }
     }
 
+    /**
+     * 通过内容创建文件（在线编辑）
+     *
+     * @param createFileFromContentRequest 创建文件请求对象
+     */
     @Override
     public void createFileFromContent(CreateFileFromContentRequest createFileFromContentRequest) {
+        // 将请求转换为DTO对象
         CreateFileFromContentDto createFileFromContentDto =
                 createFileFromContentRequestTransformer.transform(createFileFromContentRequest);
+        // 验证文件内容和路径的合法性
         createFileFromContentDtoValidator.validate(createFileFromContentDto);
 
         // todo: use storage proxy
+        // 获取文件内容
         String fileContent = createFileFromContentDto.getFileContent();
+        // 获取文件的绝对路径
         String fileAbsolutePath = createFileFromContentDto.getFileAbsolutePath();
         String srcLocalTmpFileAbsolutePath = copyFileToLocal(fileContent);
         try {

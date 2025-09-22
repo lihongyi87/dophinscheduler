@@ -105,17 +105,17 @@ public class WorkerConfig implements Validator {
     
     /**
      * Worker组名
-     * 
+     *
      * Worker组用于将Worker节点按照功能或环境分类。
-     * 传理：
+     * 原理：
      * - 不同的任务可以分发给不同的Worker组
      * - 可以实现资源隔离和环境隔离
-     * 
+     *
      * 例如：
      * - "default": 通用Worker组
      * - "big-data": 大数据处理Worker组
      * - "gpu": GPU计算Worker组
-     * 
+     *
      * 如果不设置，默认为 "default"
      */
     private String group;
@@ -157,44 +157,97 @@ public class WorkerConfig implements Validator {
      */
     private PhysicalTaskConfig physicalTaskConfig = new PhysicalTaskConfig();
 
+    /**
+     * 检查是否支持指定的配置类类型
+     *
+     * @param clazz 要检查的类类型
+     * @return 如果是WorkerConfig类类型或其子类，返回true
+     */
     @Override
     public boolean supports(Class<?> clazz) {
+        // 使用反射检查传入的类是否为WorkerConfig类或其子类
+        // isAssignableFrom方法判断当前类是否为指定类的父类或相同类
         return WorkerConfig.class.isAssignableFrom(clazz);
     }
 
+    /**
+     * 验证Worker配置的有效性并进行初始化
+     *
+     * 这个方法会：
+     * 1. 验证配置参数的合法性
+     * 2. 自动生成一些派生配置（如Worker地址、注册路径等）
+     * 3. 设置默认值
+     * 4. 打印最终的配置信息
+     *
+     * @param target 要验证的配置对象
+     * @param errors 验证错误收集器
+     */
     @Override
     public void validate(Object target, Errors errors) {
+        // 将传入的通用对象转换为WorkerConfig类型，以便访问具体的配置属性
         WorkerConfig workerConfig = (WorkerConfig) target;
+
+        // 验证心跳间隔必须大于0秒，确保Worker能正常向注册中心发送心跳
+        // 如果心跳间隔无效，将错误信息添加到errors对象中
         if (workerConfig.getMaxHeartbeatInterval().getSeconds() <= 0) {
             errors.rejectValue("max-heartbeat-interval", null, "should be a valid duration");
         }
+
+        // 如果用户没有手动配置Worker地址，系统自动生成
+        // NetUtils.getAddr会获取本机IP地址并拼接上监听端口
         if (StringUtils.isEmpty(workerConfig.getWorkerAddress())) {
             workerConfig.setWorkerAddress(NetUtils.getAddr(workerConfig.getListenPort()));
         }
 
+        // 根据注册中心的路径规范和Worker地址，自动生成注册路径
+        // 格式：/dolphinscheduler/workers/{workerAddress}
+        // 这个路径用于在Zookeeper等注册中心中标识该Worker节点
         workerConfig.setWorkerRegistryPath(
                 RegistryNodeType.WORKER.getRegistryPath() + "/" + workerConfig.getWorkerAddress());
 
+        // 如果用户没有配置Worker组名，设置为默认组"default"
+        // Worker组用于任务分发时的节点分组管理
         if (StringUtils.isEmpty(group)) {
             workerConfig.setGroup("default");
         }
 
+        // 调用打印方法，将最终的配置信息输出到日志中，便于运维人员检查
         printConfig();
     }
 
+    /**
+     * 打印Worker配置信息到日志
+     *
+     * 这个方法会将所有重要的配置参数格式化输出到日志中，
+     * 方便运维人员检查配置是否正确。
+     */
     private void printConfig() {
+        // 构建格式化的配置信息字符串，包含所有关键配置参数
+        // 使用分隔线和缩进格式，提高日志的可读性
         String config =
+                // 配置信息开始标记，使用星号分隔线突出显示
                 "\n****************************Worker Configuration**************************************" +
+                        // Worker RPC服务监听端口，用于接收Master分发的任务
                         "\n  listen-port -> " + listenPort +
+                        // 心跳发送间隔，Worker向注册中心汇报状态的频率
                         "\n  max-heartbeat-interval -> " + maxHeartbeatInterval +
+                        // Worker权重值，影响任务分发时的负载均衡计算
                         "\n  host-weight -> " + hostWeight +
+                        // 租户配置信息，用于任务执行时的用户权限管理
                         "\n  tenantConfig -> " + tenantConfig +
+                        // 服务器负载保护配置，防止资源使用过度
                         "\n  server-load-protection -> " + serverLoadProtection +
+                        // Worker完整地址（IP:端口），其他节点通过此地址访问
                         "\n  address -> " + workerAddress +
+                        // 在注册中心的注册路径，用于服务发现
                         "\n  registry-path: " + workerRegistryPath +
+                        // 物理任务执行相关配置，如线程池大小等
                         "\n  physical-task-config -> " + physicalTaskConfig +
+                        // Worker所属分组，用于任务调度时的节点分类
                         "\n  group -> " + group +
+                        // 配置信息结束标记
                         "\n****************************Worker Configuration**************************************";
+        // 将完整的配置信息以INFO级别输出到日志
         log.info(config);
     }
 }

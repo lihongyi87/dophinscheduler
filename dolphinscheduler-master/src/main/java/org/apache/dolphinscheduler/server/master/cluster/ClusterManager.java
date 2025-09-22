@@ -132,20 +132,36 @@ public class ClusterManager {
      * <p> 3. Subscribe the master change event.
      */
     private void initializeMasterClusters() {
+        // ========== 第一步：注册槽位变化监听器 ==========
         // 注册Master槽位变化监听器
-        // 当Master集群发生变化时，会触发槽位重新分配
+        // 当Master集群发生变化时（节点上线/下线），会触发槽位重新分配
+        // MasterSlotChangeListenerAdaptor会调用masterSlotManager进行槽位重新平衡
+        // 这确保了工作流能够均匀分布到所有可用的Master节点
         this.masterClusters.registerListener(new MasterSlotChangeListenerAdaptor(masterSlotManager, masterClusters));
 
+        // ========== 第二步：加载现有Master节点 ==========
         // 从注册中心获取所有现有的Master节点
-        // 解析心跳信息，构建Master服务器元数据
+        // getServerList返回的是注册中心中所有的Master节点信息
         registryClient.getServerList(RegistryNodeType.MASTER).forEach(server -> {
+            // 解析每个Master节点的心跳信息
+            // 心跳信息包含：节点地址、CPU使用率、内存使用率、进程ID等
             final MasterHeartBeat masterHeartBeat =
                     JSONUtils.parseObject(server.getHeartBeatInfo(), MasterHeartBeat.class);
+
+            // 将心跳信息转换为Master服务器元数据对象
+            // 并添加到Master集群管理器中
+            // 这会触发槽位分配等初始化操作
             masterClusters.onServerAdded(MasterServerMetadata.parseFromHeartBeat(masterHeartBeat));
         });
+
+        // 记录初始化后的Master集群状态
+        // 便于运维人员了解集群的初始拓扑结构
         log.info("Initialized MasterClusters: {}", JSONUtils.toPrettyJsonString(masterClusters.getServers()));
 
-        // 订阅Master节点变化事件，实现实时监控
+        // ========== 第三步：订阅Master节点变化事件 ==========
+        // 订阅注册中心的Master节点变化事件
+        // 当有Master节点上线、下线或更新时，masterClusters会收到通知
+        // 实现了集群状态的实时同步
         this.registryClient.subscribe(RegistryNodeType.MASTER.getRegistryPath(), masterClusters);
     }
 
@@ -166,21 +182,46 @@ public class ClusterManager {
      * <p> 3. Subscribe the worker change event.
      */
     private void initializeWorkerClusters() {
+        // ========== 第一步：加载现有Worker节点 ==========
         // 从注册中心获取所有现有的Worker节点
-        // 解析心跳信息，构建Worker服务器元数据
+        // 这些节点可能属于不同的工作组，具有不同的资源配置
         registryClient.getServerList(RegistryNodeType.WORKER).forEach(server -> {
+            // 解析每个Worker节点的心跳信息
+            // 心跳信息包含：
+            // - 节点地址和端口
+            // - 工作组信息（default或自定义组）
+            // - 资源信息（CPU核数、内存大小、磁盘空间）
+            // - 当前任务执行状态
             final WorkerHeartBeat workerHeartBeat =
                     JSONUtils.parseObject(server.getHeartBeatInfo(), WorkerHeartBeat.class);
+
+            // 将心跳信息转换为Worker服务器元数据对象
+            // 并添加到Worker集群管理器中
+            // 这会更新工作组的成员列表，影响后续任务分发
             workerClusters.onServerAdded(WorkerServerMetadata.parseFromHeartBeat(workerHeartBeat));
         });
+
+        // 记录初始化后的Worker集群状态
+        // 显示每个工作组有哪些Worker节点，便于监控和调试
         log.info("Initialized WorkerClusters: {}", JSONUtils.toPrettyJsonString(workerClusters.getServers()));
 
-        // 订阅Worker节点变化事件，实现实时监控
+        // ========== 第二步：订阅Worker节点变化事件 ==========
+        // 订阅注册中心的Worker节点变化事件
+        // 当Worker节点发生以下情况时，会收到通知：
+        // - 新Worker节点上线（扩容）
+        // - Worker节点下线（缩容或故障）
+        // - Worker节点信息更新（如工作组变更）
         this.registryClient.subscribe(RegistryNodeType.WORKER.getRegistryPath(), workerClusters);
 
-        // 设置Worker组变化通知器，并启动
-        // 当Worker组发生变化时，会通知相关组件进行调整
+        // ========== 第三步：启动Worker组变化通知器 ==========
+        // 设置Worker组变化通知器，监听工作组的动态变化
+        // 工作组可能来源于：
+        // 1. 配置文件（静态配置）
+        // 2. 数据库（动态配置）
         this.workerGroupChangeNotifier.subscribeWorkerGroupsChange(workerClusters);
+
+        // 启动通知器，开始定期检查工作组变化
+        // 当检测到新的工作组或工作组成员变化时，会通知相关组件
         this.workerGroupChangeNotifier.start();
     }
 
