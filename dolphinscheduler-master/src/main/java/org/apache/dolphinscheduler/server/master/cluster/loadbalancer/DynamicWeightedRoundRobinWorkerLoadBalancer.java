@@ -107,6 +107,9 @@ public class DynamicWeightedRoundRobinWorkerLoadBalancer implements IWorkerLoadB
              */
             @Override
             public void onServerAdded(WorkerServerMetadata server) {
+                // 为新加入的Worker节点计算权重并创建权重服务器对象
+                // calculateWeight方法会根据节点的实时负载情况计算权重
+                // 权重越高表示该节点处理能力越强，被选中的概率越大
                 weightedServerMap.put(server.getAddress(), new WeightedServer<>(server, calculateWeight(server)));
             }
 
@@ -118,6 +121,9 @@ public class DynamicWeightedRoundRobinWorkerLoadBalancer implements IWorkerLoadB
              */
             @Override
             public void onServerRemove(WorkerServerMetadata server) {
+                // 从权重映射表中移除已离开的Worker节点
+                // 这样确保负载均衡算法不会尝试选择已经不存在的节点
+                // 避免任务分发到不可用的节点上导致执行失败
                 weightedServerMap.remove(server.getAddress());
             }
 
@@ -129,6 +135,10 @@ public class DynamicWeightedRoundRobinWorkerLoadBalancer implements IWorkerLoadB
              */
             @Override
             public void onServerUpdate(WorkerServerMetadata server) {
+                // 重新计算更新后的Worker节点权重并更新映射表
+                // 当Worker节点的负载状态发生变化时（如CPU使用率、内存使用率、线程池使用率变化）
+                // 需要重新计算权重以反映节点的最新处理能力
+                // 这确保了负载均衡算法能够根据实时状态做出最优选择
                 weightedServerMap.put(server.getAddress(), new WeightedServer<>(server, calculateWeight(server)));
             }
 
@@ -144,11 +154,22 @@ public class DynamicWeightedRoundRobinWorkerLoadBalancer implements IWorkerLoadB
              * @return 计算出的权重值
              */
             private double calculateWeight(WorkerServerMetadata server) {
-                return 100 - (dynamicWeightConfigProperties.getCpuUsageWeight() * server.getCpuUsage()
+                // ========== 动态权重计算算法 ==========
+                // 基础权重为100，然后根据各项负载指标扣减权重
+                // 权重越高表示节点处理能力越强，被选中概率越大
+
+                // 计算各项负载指标的加权值：
+                // 1. CPU使用率权重 * CPU实际使用率
+                // 2. 内存使用率权重 * 内存实际使用率
+                // 3. 线程池使用率权重 * 线程池实际使用率
+                double totalLoadScore = dynamicWeightConfigProperties.getCpuUsageWeight() * server.getCpuUsage()
                         + dynamicWeightConfigProperties.getMemoryUsageWeight() * server.getMemoryUsage()
-                        + dynamicWeightConfigProperties.getTaskThreadPoolUsageWeight()
-                                * server.getTaskThreadPoolUsage())
-                        / 3;
+                        + dynamicWeightConfigProperties.getTaskThreadPoolUsageWeight() * server.getTaskThreadPoolUsage();
+
+                // 除以3是为了计算平均负载分数
+                // 最终权重 = 100 - 平均负载分数
+                // 这样负载越高的节点权重越低，负载越低的节点权重越高
+                return 100 - totalLoadScore / 3;
             }
         });
     }

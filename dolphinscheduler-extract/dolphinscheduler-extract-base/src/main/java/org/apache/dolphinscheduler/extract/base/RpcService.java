@@ -24,7 +24,21 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Used to mark a class as a RPC service
+ * RPC服务标记注解
+ *
+ * 用于标记一个类为RPC服务提供者，被标记的类将自动注册到RPC服务器中。
+ * 这是extract框架的核心注解，类比于@Service注解，但专门用于RPC服务注册。
+ *
+ * 使用方式：
+ * - 在服务实现类上添加此注解
+ * - 框架会自动扫描并注册RPC方法
+ * - 支持跨节点的远程调用
+ *
+ * 适用场景：
+ * - Master节点提供的工作流控制服务
+ * - Worker节点提供的任务执行服务
+ * - Alert节点提供的告警发送服务
+ * - 各节点间的状态同步服务
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)

@@ -43,11 +43,18 @@ public abstract class BaseServerMetadata implements IClusters.IServerMetadata {
 
     @Override
     public String getAddress() {
+        // 返回服务器的网络地址
+        // 这个地址是服务器在集群中的唯一标识符，格式通常为"host:port"
+        // 用于集群管理、任务分发、节点通信等各种场景
         return address;
     }
 
     @Override
     public ServerStatus getServerStatus() {
+        // 返回服务器当前的运行状态
+        // 状态枚举包括：NORMAL（正常）、BUSY（繁忙）、ABNORMAL（异常）等
+        // 这个状态决定了服务器是否可以接收新任务、参与负载均衡等
+        // 集群管理组件根据这个状态来做调度决策
         return serverStatus;
     }
 
